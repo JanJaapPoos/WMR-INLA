@@ -12,3 +12,7 @@ cpue_BTS <- cpue_BTS[!(names(cpue_BTS) %in% c("Country","DoorType","HaulLat","Ha
 cpue_BTS <- cpue_BTS[!is.na(cpue_BTS$LngtClass),]
 
 cpue <- rbind(cpue_BTS,cpue_IBTS)
+
+# Make unique haul for trawllist and so that we can do different merges needed later
+cpue$uniqueHaul <-   paste(cpue$Year, cpue$Survey, cpue$Quarter, cpue$Ship, cpue$HaulNo, cpue$ShootLat, cpue$ShootLon, sep="_")
+trawllist <- cpue[!duplicated(cpue$uniqueHaul),!names( cpue) %in% c("Species","AphiaID","NoPerHaul","Sex", "LngtClass")]
