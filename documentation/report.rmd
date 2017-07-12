@@ -7,9 +7,13 @@ The statistical package INLA has the advantage over other software in R that it 
 
 ##Preparing the R environment
 
+```{r, eval=T, echo=FALSE}
+rm(list=ls())
+```
+
 First, we need to set the path where the data is located and to load the relevant libraries. We need the inla package, but also a number of packages for spatial analyses and for plotting the data and the results.
 
-```{r, eval=T, echo=FALSE}
+```{r, eval=T, results="hide", echo=TRUE, message=FALSE, warning=FALSE}
 path <- "d://WMR-INLA/data"
 
 library(INLA); library(fields); library(lattice); library(latticeExtra); library(grid); library(gridExtra);library(rgdal); library(mapdata) 
@@ -19,17 +23,10 @@ library(INLA); library(fields); library(lattice); library(latticeExtra); library
 
 ##The IBTS and BTS data
 
+We will use the BTS and IBTS data set. In this case we downloaded the data for starry ray. These dataset contains the CPUE per length per haul can be dowloaded from datras.ices.dk. 
 
+First we read in the IBTS dataset. The lengths are stored in mm and the CPUE is stored as number per hour. "Zero hauls" are included (hauls where no individuals are caught). For those hauls, the Lengthclass is equal to zero and CPUE number per hour is zero. The haul duration is included in the data and recorded in minutes. Because we want to use the count data rather than the CPUEs, we calculate the number per haul by multiplying the CPUE and the haulduration. In order to make sure that the counts are whole numbers we use round(). At a later stage we may include that allows downloading the data straight from the github site.
 
-
-
-First we read in the IBTS dataset. Thas dataset contains the CPUE per length per haul can be dowloaded from datras.ices.dk. In this case we downloaded the data for starry ray. This data set has zero hauls (hauls where no individuals are caught) are coded so that Lengthclass is equal to zero and CPUE number per hour is zero.   
-
-Note that we should consider downloading the data straight from GITHUB
-
-
-```{r, eval=T, echo=TRUE}
-```
 
 ```{r, eval=T, echo=TRUE}
 cpue_IBTS <- read.csv(file.path(path,"CPUE per length per haul_2017-07-12 11_18_36.csv"), stringsAsFactors = F)
@@ -37,9 +34,9 @@ cpue_IBTS$NoPerHaul <- round(cpue_IBTS$CPUE_number_per_hour*(cpue_IBTS$HaulDur/6
 cpue_IBTS <- cpue_IBTS[!(names(cpue_IBTS) %in% c("DateofCalculation", "Area", "SubArea", "DayNight","Species","Sex","DateTime","CPUE_number_per_hour"))]
 ```
 
-We have a similar but slightly different data set for BTS
+We have a similar but slightly different data set for BTS. However, this dataset has many more columns that we do not really need for these examples, and that we thus remove before combining the IBTS and BTS data sets. Here, the "zero hauls" have lengthclass NA and the number per haul is NA. These observations are then set to zero, so that we have the same structure as in the IBTS data set. 
 
-```{r, eval=T, echo=TRUE}
+```{r, eval=TRUE, echo=TRUE}
 cpue_BTS  <- read.csv(file.path(path,"CPUE per length per Hour and Swept Area_2017-07-12 11_29_36.csv"), stringsAsFactors = F)
 cpue_BTS <- cpue_BTS[!(names(cpue_BTS) %in% c("Country","DoorType","HaulLat","HaulLong","StatRec","DataType","Rigging","Tickler","Distance","Warplngt","TowDir","WindDir","WindSpeed","SwellDir","SwellHeight","StNo","Month","Day","TimeShot","Stratum","ICESArea","DateofCalculation", "Area", "SubArea", "DayNight","Species", "Sex","SpecVal","SubFactor","GearExp","SweepLngt","Netopening","BycSpecRecCode","StdSpecRecCode","HaulVal","CPUE_number_per_hour","CPUE_number_per_km2","SweptArea_km2","DistanceDerived","BeamWidth", "HLNoAtLngt"))]
 cpue_BTS[is.na(cpue_BTS$LngtClass),]$NoPerHaul <- 0
@@ -47,79 +44,87 @@ cpue_BTS[is.na(cpue_BTS$LngtClass),]$LngtClass <- 0
 ```
 
 
-Combine the two sets into one
-```{r, eval=T, echo=T}
+Next we combine the two sets into one.
+```{r, eval=TRUE, echo=TRUE}
 cpue <- rbind(cpue_BTS,cpue_IBTS)
 ```
-# Make unique haul for trawllist and so that we can do different merges needed later
 
-```{r, eval=T, echo=T}
+Now that the IBTS and BTS data sets are combined we want to make a set where we have counts for all hauls and all lenghts. This means first making an dentifier for each unique haul (based on the information we have for all the hauls). This identifier is used to make a "trawllist" where all the information for the hauls is stored.
+
+Once the trawllist is make we use epand.grid() to make a combination of all hauls and lenght classes. This set is merged with our original data set.
+```{r, eval=TRUE, echo=TRUE}
 cpue$uniqueHaul <-   paste(cpue$Year, cpue$Survey, cpue$Quarter, cpue$Ship, cpue$HaulNo, cpue$ShootLat, cpue$ShootLon, sep="_")
 trawllist <- cpue[!duplicated(cpue$uniqueHaul),!names( cpue) %in% c("Species","AphiaID","NoPerHaul","Sex", "LngtClass")]
 
 #expand grid 
 haulsLengths <- expand.grid(uniqueHaul=unique(cpue$uniqueHaul),LngtClass=unique(cpue$LngtClass), stringsAsFactors = F)
-nrow(haulsLengths)
 full_cpue <- merge(haulsLengths,cpue[names(cpue) %in% c("uniqueHaul", "LngtClass","NoPerHaul")], all.x=T)
 rm(haulsLengths)
 head(full_cpue)
 ```
 
-```{r, eval=T, echo=T}
+After we merged all possible combinations with the data we now have NAs for those lengts and hauls where the catch is zero, and so we set those to zero. This data is subsequently merged to the trawllist so that we now have all information together. 
+```{r, eval=TRUE, echo=TRUE}
 full_cpue[is.na(full_cpue$NoPerHaul),]$NoPerHaul <- 0
-nrow(full_cpue)
 full_cpue  <- merge(full_cpue,trawllist, all.x=T)
-nrow(full_cpue)
 ```
 
-```{r, eval=T, echo=T}
+The records that have lenghts equal to zero (that indicated zero hauls in our original set ) now need to be removed because we have all the information we need (these hauls now have zero catch for the full length range observed in the survey) 
+
+```{r, eval=TRUE, echo=TRUE}
 #now remove zero lengths
 full_cpue <- full_cpue[full_cpue$LngtClass> 0,]
 ```
 
-```{r, eval=T, echo=T}
+##Subsetting and length aggregation
+
+We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will subset the data (here we only include data since 2010) 
+```{r, eval=TRUE, echo=TRUE}
 # make selection of  fullset.
-cpue_subset <- full_cpue[full_cpue$Year >2014,]
-nrow(cpue_subset)
+cpue_subset <- full_cpue[full_cpue$Year >2013,]
 ```
 
-```{r, eval=T, echo=T}
+Now we have only `r  nrow(cpue_subset)` left in cpue_subset. We start with a very simple analysis where we do not take length into account, and only analyse numbers per haul. Hence we aggregate the counts per haul.
+
+```{r, eval=TRUE, echo=TRUE}
 cpue_subset <- aggregate(NoPerHaul~uniqueHaul+Survey+  Quarter + Ship + Gear  + HaulNo + Year + HaulDur + ShootLat +  ShootLong+  Depth, data= cpue_subset,FUN="sum")
 ```
 
+To give us a quick impression of the data we plot it in a map. The two surveys have different colors, and the size of the circles indicate the counts in each haul
 
-```{r, eval=T, echo=T}
+```{r, eval=TRUE, echo=TRUE}
 plot(cpue_subset$ShootLong,cpue_subset$ShootLat, cex=(cpue_subset$NoPerHaul)/10+0.1, col=as.numeric(as.factor(cpue_subset$Survey)))
 map("world",add=T)
 ```
 
-```{r, eval=T, echo=T}
+We also plot a quick histogram of the counts, to give us an impression of the statistical distribution of the data.
+```{r, eval=TRUE, echo=TRUE}
 hist(cpue_subset$NoPerHaul, 200)
 ```
 
 
-
-```{r, eval=T, echo=T}
+The INLA code does not like special characters in some of the variable names, like the hyphen in "NS-IBTS". Therefore we rename the survey to NSIBTS. We also need to convert all fixed effects that are factors in the INLA model.   
+```{r, eval=TRUE, echo=TRUE}
 #make year and survey as factor
 cpue_subset[cpue_subset$Survey=="NS-IBTS",]$Survey <- "NSIBTS"
-
 
 cpue_subset$fYear <- as.factor(cpue_subset$Year)
 cpue_subset$fSurvey <- as.factor(cpue_subset$Survey)
 ```
 
-```{r, eval=T, echo=T}
-
-#en nu gaan we lekker verder typen
-
+For our spatial correlation we will need an isomorphic coordinate system. Thereofre we transform the latitudes and longitudes to UTM coordinates. these UTM coordinates are given in meters, so we divide them by 1000 to get kilometers. These UTM coordinates combined into a Loc (location) dataset.  
+```{r, eval=TRUE, echo=TRUE}
 UTM <- project(cbind(cpue_subset$ShootLong, cpue_subset$ShootLat), "+proj=utm +zone=31U ellps=WGS84") 
 
 cpue_subset$Xkm <- UTM[,1]/1000
 cpue_subset$Ykm <- UTM[,2]/1000
 
 Loc <- cbind(cpue_subset$Xkm , cpue_subset$Ykm )
-Loc
+```
 
+Next we need a mesh for the spatial data. Because we do not want our spatial correlations to pass landmasses (e.g. Denmark) we first make a convex hull of the data points using inla.nonconvex.hull(). This convex hull is used as a boundary for making a 2d mesh 
+
+```{r, eval=TRUE, echo=TRUE}
 
 ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
 mesh1    <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(150))
@@ -136,7 +141,7 @@ spde  <- inla.spde2.matern(mesh1)
 w.st <- inla.spde.make.index('w', n.spde = spde$n.spde)
 ```
 
-Note that in code below the names in the model matrix should not contain any special characters!
+Note that in code below the names in the model matrix should not contain any special characters! This is why we renamd the "NS-IBTS" survey" to "NSIBTS""
 
 ```{r, eval=T, echo=T}
   
@@ -158,8 +163,11 @@ Stack1 <- inla.stack(
        X=X, #Covariates
        w=w.st))                  #Spatial field  
 
+```
 
 
+
+```{r, eval=T, results='hide', echo=T, message=FALSE, warning=FALSE}
   fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde)"),collapse =" + ")))
 
   #INLA:::inla.dynload.workaround() 
@@ -190,23 +198,16 @@ hist(cpue_subset$NoPerHaul,200, xlim=c(0,50))
 ```
 
 
-```{r, eval=T, echo=T}
+```{r, eval=T, echo=T, fig.width=8, fig.height=4}
 
-  wm <- I1nb$summary.random$w$mean
-  wsd <- I1nb$summary.random$w$sd
-  length(w)
+wproj <- inla.mesh.projector(mesh1, xlim = range(Loc[,1]), ylim = range(Loc[,2])) 
 
-  wproj <- inla.mesh.projector(mesh1,
-                             xlim = range(Loc[,1]),
-                             ylim = range(Loc[,2])) 
-
-    wm.pm100100 <- inla.mesh.project(wproj,wm)
-    wsd.pm100100 <- inla.mesh.project(wproj,wsd)
+wm.pm100100  <- inla.mesh.project(wproj, I1nb$summary.random$w$mean)
+wsd.pm100100 <- inla.mesh.project(wproj,I1nb$summary.random$w$sd)
     
-    grid <- expand.grid(x = wproj$x, y = wproj$y)
-    grid$zm <- as.vector(wm.pm100100)   
-    grid$zsd <- as.vector(wsd.pm100100)   
-
+grid     <- expand.grid(x = wproj$x, y = wproj$y)
+grid$zm  <- as.vector(wm.pm100100)   
+grid$zsd <- as.vector(wsd.pm100100)   
 
 wld <- map('world', xlim=c(-5,15), ylim=c(47,62),plot=FALSE)
 wld <- data.frame(lon=wld$x, lat=wld$y)
@@ -214,12 +215,12 @@ wld <- data.frame(lon=wld$x, lat=wld$y)
 UTMmap <- project(cbind(wld$lon, wld$lat), "+proj=utm +zone=31U ellps=WGS84")
 UTMmapFinal <- data.frame("xm"  =UTMmap[,1]/1e3, "ym" = UTMmap[,2]/1e3)
 
-levelplot(zm ~ x * y  ,
+p1 <- levelplot(zm ~ x * y  ,
           data = grid, 
           scales = list(draw = TRUE),
-          xlab = list("Easting", cex = 1.5),
-          ylab = list("Northing", cex = 1.5),
-          main = list("Posterior mean spatial random fields", cex = 1.5),
+          xlab = list("Easting", cex = 1),
+          ylab = list("Northing", cex = 1),
+          main = list("Posterior mean spatial random fields", cex = 1),
           col.regions=tim.colors(25, alpha = 1),
           panel=function(x, y, z, subscripts,...){
             panel.levelplot(x, y, z, subscripts,...)
@@ -229,12 +230,12 @@ levelplot(zm ~ x * y  ,
                         size = unit(cpue_subset$NoPerHaul/10, "char"))  
           }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
 
-levelplot(zsd ~ x * y,
+p2 <- levelplot(zsd ~ x * y,
           data = grid, 
           scales = list(draw = TRUE),
-          xlab = list("Easting", cex = 1.5),
-          ylab = list("Northing", cex = 1.5),
-          main = list("Posterior sd spatial random fields", cex = 1.5),
+          xlab = list("Easting", cex = 1),
+          ylab = list("Northing", cex = 1),
+          main = list("Posterior sd spatial random fields", cex = 1),
           col.regions=tim.colors(25, alpha = 1),
           panel=function(x, y, z, subscripts,...){
             panel.levelplot(x, y, z, subscripts,...)
@@ -244,10 +245,11 @@ levelplot(zsd ~ x * y,
                         size = unit(cpue_subset$NoPerHaul/10, "char"))  
           }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
 
+grid.arrange(p1,p2, ncol=2)
   
 ```
 
-```{r, eval=T, echo=T}
+```{r, eval=FALSE, echo=T}
 
 tcoo <- rbind(c(0.3, 0.3), c(0.5, 0.5), c(0.7, 0.7))
 inla.nonconvex.hull
@@ -288,7 +290,7 @@ inla.pmarginal(inla.qmarginal(
 
 
 
-```{r, eval=T, echo=T}
+```{r, eval=FALSE, echo=T}
 
 
 # Let us now show how to simulate from model I3. This was the model:
