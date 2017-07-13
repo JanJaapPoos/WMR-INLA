@@ -122,7 +122,7 @@ cpue_subset$Ykm <- UTM[,2]/1000
 Loc <- cbind(cpue_subset$Xkm , cpue_subset$Ykm )
 ```
 
-Next we need a mesh for the spatial data. Because we do not want our spatial correlations to pass landmasses (e.g. Denmark) we first make a convex hull of the data points using inla.nonconvex.hull(). This convex hull is used as a boundary for making a 2d mesh 
+Next we need a mesh for the spatial data. Because we do not want our spatial correlations to pass landmasses (e.g. Denmark) we first make a convex hull of the data points using inla.nonconvex.hull(). This convex hull is used as a boundary for making a 2d mesh. 
 
 ```{r, eval=TRUE, echo=TRUE}
 
@@ -130,6 +130,10 @@ ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
 mesh1    <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(150))
 plot(mesh1)
 points(Loc, col = 1, pch = 16, cex = 0.5)
+```
+
+Once the 2d mesh is made we construct a observation/prediction weight matrix for the model. This is also called the "projector matrix".
+```{r, eval=TRUE, echo=TRUE}
 
   # 2. Define the weighting factors a_ik (also called the projector matrix).
 A1      <- inla.spde.make.A(mesh  = mesh1, loc   = Loc)
@@ -168,18 +172,16 @@ Stack1 <- inla.stack(
 
 
 ```{r, eval=T, results='hide', echo=T, message=FALSE, warning=FALSE}
-  fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde)"),collapse =" + ")))
+fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde)"),collapse =" + ")))
 
-  #INLA:::inla.dynload.workaround() 
-  I1p <- inla(eval(fsp), family = "poisson", data=inla.stack.data(Stack1),
+#INLA:::inla.dynload.workaround() 
+I1p <- inla(eval(fsp), family = "poisson", data=inla.stack.data(Stack1),
            control.compute = list(dic = TRUE, waic = TRUE),
            control.predictor = list(A = inla.stack.A(Stack1)))
 
-  I1nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
+I1nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
            control.compute = list(dic = TRUE, waic = TRUE),
            control.predictor = list(A = inla.stack.A(Stack1)))
-
-  
 ```
 
 ```{r, eval=T, echo=T}
@@ -289,7 +291,6 @@ inla.pmarginal(inla.qmarginal(
 ```
 
 
-
 ```{r, eval=FALSE, echo=T}
 
 
@@ -380,3 +381,76 @@ for (i in 1:nx){
 #############################################		
 		
 ```
+
+##Including length in the analysis
+
+Owing to ontogenetic niche shifts we expect that the spatial distribution of small indivduals is different from the spatial distribution of large indivuals. Hence we want to include a length component in the spatial distribution of the counts.
+
+First we need to make a new subset of the data that includes the length information (and leaving out the aggregation step in our earlier analysis).
+
+```{r, eval=TRUE, echo=TRUE}
+# make selection of  fullset.
+cpue_subset <- full_cpue[full_cpue$Year >2013,]
+```
+
+Next we inspect the length range in the data and make a number of "knots" along the length range that we will later use for our analysis 
+
+```{r, eval=T, echo=T}
+  sort(unique(cpue_subset$LngtClass))
+  Knots <- seq(from = 10, to = 670, by = 100)
+  Knots 
+```
+
+Using the knots as locations, we make a 1 dimensional mesh.   
+```{r, eval=T, echo=T}
+  
+  # One-dimensional mesh for time (length class) See the time series module
+  mesh.t <- inla.mesh.1d(loc = Knots)
+  mesh.t$loc
+  mesh.t$n   #We have 7 random fields
+```
+
+Now that we have a 1 dimensional mesh for the lengths, we use it  to construct a observation/prediction weight matrix ("projetor matrix") based on the spatial mesh that we already created earlier (mesh1) and our new mesh for the lengths. The lengths are used in the "group model". The new projector matrix is names A2 to distinguish it from the projector matrix of the previous model.
+
+```{r, eval=T, echo=T}
+  
+  # 2. Define the weighting factors a_ik (also called the projector matrix).
+  NGroups <- length(Knots) # = 4  
+  A2      <- inla.spde.make.A(mesh  = mesh1, 
+                            loc   = Loc,
+                            group = cpue_subset$LngtClass, 
+                            group.mesh = mesh.t)
+  dim(A2) 
+```
+
+We need to make an inla.spde model object for a Matern model, but we still have that available from the model without size structure. That object was named "spde". We use it to make a list of named index vectors for the SPDE model. Note that the command for making the list of index vectors now includes an argument for the groups. 
+
+```{r, eval=T, echo=T}
+w.st <- inla.spde.make.index('w', 
+                             n.spde = spde$n.spde, 
+                             n.group = NGroups)
+```
+
+Next we make a new stack. For this we need a model matrix. Although the fixed effects are the same as in the previous model, we still need to make a new model matrix because the data now include the length structure. 
+
+```{r, eval=T, echo=T}
+
+# 5. Make a stack. In this process we tell INLA at which points on the mesh we sampled the response variable and the covariates. 
+#model matrix
+Xmatrix <- model.matrix(~  fYear + fSurvey +  HaulDur,  data = cpe_subset)
+
+#this is the easier one and works
+head(Xmatrix)
+X <- as.data.frame(Xmatrix[,-1])
+names(X) <- c(gsub("[:]",".",names(X)))
+head(X)
+
+N <- nrow(ple_subset_Q)
+Stack4 <- inla.stack(
+  tag  = "Fit",
+  data = list(y = ple_subset_Q$NoPerHaul),    
+  A    = list(1,1, A3),                      
+  effects = list(  
+    Intercept = rep(1, N),       
+    X = as.data.frame(X), #Covariates
+    w.st))                  #Spatial-temp field  
