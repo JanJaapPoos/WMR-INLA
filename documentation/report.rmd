@@ -72,7 +72,7 @@ full_cpue  <- merge(full_cpue,trawllist, all.x=T)
 
 The records that have lenghts equal to zero (that indicated zero hauls in our original set ) now need to be removed because we have all the information we need (these hauls now have zero catch for the full length range observed in the survey). 
 
-In addition, there are some observations that are highly unlikely: For instance there is a single observation of an individual of 100 cm (in 1977). This is suspicious, and we remove it from the data 
+In addition, there are some observations that are highly unlikely: For instance there is a single observation of an individual of 100 cm (in 1977). This is suspicious, and we remove it from the data. 
 
 
 ```{r, eval=TRUE, echo=TRUE}
@@ -100,10 +100,10 @@ full_cpue[full_cpue$Survey=="NS-IBTS",]$Survey <- "NSIBTS"
 
 ##Subsetting and length aggregation
 
-We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will subset the data (here we only include data since 2010).    
+We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will subset the data (here we only include data since 2013).    
 ```{r, eval=TRUE, echo=TRUE}
 # make selection of  fullset.
-cpue_subset <- full_cpue[full_cpue$Year >2013,]
+cpue_subset <- full_cpue[full_cpue$Year >= 2013,]
 ```
 
 Now we have only `r  nrow(cpue_subset)` left in cpue_subset. We start with a very simple analysis where we do not take length into account, and only analyse numbers per haul. Hence we aggregate the counts per haul.
@@ -134,9 +134,7 @@ Next we need a mesh for the spatial data. Because we do not want our spatial cor
 ```{r, eval=TRUE, echo=TRUE}
 
 ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
-mesh1    <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(150))
-plot(mesh1)
-points(Loc, col = 1, pch = 16, cex = 0.5)
+mesh1a    <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(150))
 ```
 
 As an alternative, we can also take the shapefile of the North Sea as a mesh, which makes prediction in the future easier, as we know no record can be found outside the North Sea area (give or take evolution). We first load the ICES shapefiles which were downloaded from http://gis.ices.dk/sf/. We load this shapefiles, merge layers together, transform to UTM, convert UTM to km rather than meters and finally create a mesh. 
@@ -152,22 +150,30 @@ NorthSeaUTM <- spTransform(NorthSea,CRS("+proj=utm +zone=31"))
 NS.border <- inla.sp2segment(NorthSeaUTM)
 NS.border$loc <- NS.border$loc/1000
 
-mesh      <- inla.mesh.2d(boundary=NS.border, cutoff=3,max.edge=c(30))
+mesh1b      <- inla.mesh.2d(boundary=NS.border, cutoff=3,max.edge=c(30))
 
-plot(mesh)
 
 ```
+
+```{r, eval=TRUE, echo=TRUE}
+par(mfrow=c(1,2))
+plot(mesh1a)
+points(Loc, col = 1, pch = 16, cex = 0.5)
+plot(mesh1b)
+points(Loc, col = 1, pch = 16, cex = 0.5)
+```
+
 
 
 Once the 2d mesh is made we construct a observation/prediction weight matrix for the model. This is also called the "projector matrix".
 ```{r, eval=TRUE, echo=TRUE}
 
 # 2. Define the weighting factors a_ik (also called the projector matrix).
-A1      <- inla.spde.make.A(mesh  = mesh1, loc   = Loc)
+A1      <- inla.spde.make.A(mesh  = mesh1a, loc   = Loc)
 dim(A1)
 
 # 3. Define the spde
-spde  <- inla.spde2.matern(mesh1)
+spde  <- inla.spde2.matern(mesh1a)
 
 w.st <- inla.spde.make.index('w', n.spde = spde$n.spde)
 ```
@@ -209,7 +215,7 @@ I1p <- inla(eval(fsp), family = "poisson", data=inla.stack.data(Stack1),
            control.predictor = list(A = inla.stack.A(Stack1)))
 
 I1nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
-           control.compute = list(dic = TRUE, waic = TRUE),
+           control.compute = list(dic = TRUE, waic = TRUE, config=TRUE),
            control.predictor = list(A = inla.stack.A(Stack1)))
 ```
 
@@ -218,6 +224,9 @@ I1nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
 summary(I1p)
 
 summary(I1nb)
+```
+
+```{r, eval=T, echo=T}
 
 idx <- inla.stack.index(Stack1, tag= 'Fit')$data
 quantile(I1nb$summary.fitted.values[idx,"mean"])
@@ -320,10 +329,10 @@ inla.pmarginal(inla.qmarginal(
 
 Next we want to simulate a large number of 
 ```{r, eval=FALSE, echo=T}
-# Let us now show how to simulate from model I1nb. This was the model:
+# Simulate from model I1nb
 
 # Simulation study spatial Negbin model.
-# Set the random seed and the number of simulations
+# First set random seed and the number of simulations
 set.seed(12345)
 NSim <- 1000
 
