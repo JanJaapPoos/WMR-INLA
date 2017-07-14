@@ -17,8 +17,10 @@ First, we need to set the path where the data is located and to load the relevan
 ```{r, eval=T, results="hide", echo=TRUE, message=FALSE, warning=FALSE}
 path <- "d://WMR-INLA/data"
 
-library(INLA); library(fields); library(lattice); library(latticeExtra); library(grid); library(gridExtra);library(rgdal); library(mapdata) 
-
+library(INLA); library(fields); 
+library(lattice); library(latticeExtra); library(grid); library(gridExtra);
+library(rgdal); library(rgeos); 
+library(mapdata); library(maptools)
 ```
 
 
@@ -36,9 +38,6 @@ cpue_IBTS <- cpue_IBTS[!(names(cpue_IBTS) %in% c("DateofCalculation", "Area", "S
 cpue_IBTS$uniqueHaul <-   paste(cpue_IBTS$Year, cpue_IBTS$Survey, cpue_IBTS$Quarter, cpue_IBTS$Ship, cpue_IBTS$HaulNo, cpue_IBTS$ShootLat, cpue_IBTS$ShootLon, sep="_")
 
 ```
-
-
-
 
 We have a similar but slightly different data set for BTS. However, this dataset has many more columns that we do not really need for these examples, and that we thus remove before combining the IBTS and BTS data sets. Here, the "zero hauls" have lengthclass NA and the number per haul is NA. These observations are then set to zero, so that we have the same structure as in the IBTS data set. 
 
@@ -113,10 +112,10 @@ full_cpue[full_cpue$Survey=="NS-IBTS",]$Survey <- "NSIBTS"
 
 ##Subsetting and length aggregation
 
-We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will subset the data (here we only include data since 2013).    
+We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will subset the data (here we only include data since 2012).    
 ```{r, eval=TRUE, echo=TRUE}
 # make selection of  fullset.
-cpue_subset <- full_cpue[full_cpue$Year >= 2013,]
+cpue_subset <- full_cpue[full_cpue$Year >= 2012,]
 ```
 
 Now we have only `r  nrow(cpue_subset)` left in cpue_subset. We start with a very simple analysis where we do not take length into account, and only analyse numbers per haul. Hence we aggregate the counts per haul.
@@ -152,7 +151,6 @@ mesh1a    <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(150))
 
 As an alternative, we can also take the shapefile of the North Sea as a mesh, which makes prediction in the future easier, as we know no record can be found outside the North Sea area (give or take evolution). We first load the ICES shapefiles which were downloaded from http://gis.ices.dk/sf/. We load this shapefiles, merge layers together, transform to UTM, convert UTM to km rather than meters and finally create a mesh. 
 ```{r, eval=TRUE, echo=TRUE}
-require(rgeos); require(maptools)
 ICESareas <- readShapePoly(file.path(path,"ICES_Areas_20160601_dense"))
 NorthSea  <- subset(ICESareas,SubArea==4)
 NorthSea  <- gUnionCascaded(NorthSea)
@@ -349,10 +347,12 @@ First we need to make a new subset of the data that includes the length informat
 
 ```{r, eval=TRUE, echo=TRUE}
 # make selection of  fullset.
-cpue_subset <- full_cpue[full_cpue$Year >2013,]
+cpue_subset <- full_cpue[full_cpue$Year >= 2012,]
 ```
 
-Let's make 5 cm classes instead of 1 cm classes. This reduces the number of observations.
+Let's make 5 cm classes instead of 1 cm classes. This reduces the number of observations. We use round to achieve this. Remember that the units of the length measurements is mm. 
+
+Once we have 5 cm lenght classes, we need aggregate() to sum the numbers per haul within our new length bins. Becaus we need the other info in the data set as well we include all variables in the aggregate. 
 
 ```{r, eval=TRUE, echo=TRUE}
 cpue_subset$LngtClass <- round(cpue_subset$LngtClass/50)*50
@@ -360,16 +360,16 @@ cpue_subset$LngtClass <- round(cpue_subset$LngtClass/50)*50
 cpue_subset <- aggregate(NoPerHaul~ LngtClass + uniqueHaul+Survey+  Quarter + Ship + Gear  + HaulNo + Year + HaulDur + ShootLong + ShootLat + Xkm + Ykm +  Depth, data= cpue_subset,FUN="sum")
 ```
 
-We subsample the zero observations, but those remaining will receive a higher weight in the final model.  
+Because we now have combinations for all hauls and several length classes, the subset of data (since 2012) is still very big. It has`r  nrow(cpue_subset)` observations. In order to reduce the number of observaions used in the INLA model, we take all non-zero observations but we subsample the zero observations. The remaining zero observations willneed to receive a higher weight in the final model. Note that this is not yet implemented.  
 ```{r, eval=TRUE, echo=TRUE}
 cpue_subset_temp  <- cpue_subset[cpue_subset$NoPerHaul > 0,]
-cpue_subset_temp  <-rbind(cpue_subset_temp, cpue_subset[sample(which(cpue_subset$NoPerHaul==0),9000),])
+cpue_subset_temp  <-rbind(cpue_subset_temp, cpue_subset[sample(which(cpue_subset$NoPerHaul==0),10000),])
 
 cpue_subset <- cpue_subset_temp
 ```
 
 
-The UTM coordinates combined into a Loc (location) dataset.  
+As before, The UTM coordinates of the observations are combined into a Loc (location) dataset. That dataset is used to create a mesh in the next step.  
 ```{r, eval=TRUE, echo=TRUE}
 Loc <- cbind(cpue_subset$Xkm , cpue_subset$Ykm )
 ```
@@ -384,7 +384,7 @@ plot(mesh2a)
 points(Loc, col = 1, pch = 16, cex = 0.5)
 ```
 
-Next we inspect the length range in the data and make a number of "knots" along the length range that we will later use for our analysis. 
+Next we inspect the length range in the data by making a histogram of length observations. This histogram can be used to define the locations ofa number of "knots" along the length range that we will later use for our analysis. More knots means a longer computing time (but a higher degree of flexibility in the length component of the spatial correlation). 
 
 
 ```{r, eval=T, echo=T}
