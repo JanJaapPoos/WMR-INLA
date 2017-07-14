@@ -32,15 +32,27 @@ First we read in the IBTS dataset. The lengths are stored in mm and the CPUE is 
 cpue_IBTS <- read.csv(file.path(path,"CPUE per length per haul_2017-07-12 11_18_36.csv"), stringsAsFactors = F)
 cpue_IBTS$NoPerHaul <- round(cpue_IBTS$CPUE_number_per_hour*(cpue_IBTS$HaulDur/60))
 cpue_IBTS <- cpue_IBTS[!(names(cpue_IBTS) %in% c("DateofCalculation", "Area", "SubArea", "DayNight","Species","Sex","DateTime","CPUE_number_per_hour"))]
+
+cpue_IBTS$uniqueHaul <-   paste(cpue_IBTS$Year, cpue_IBTS$Survey, cpue_IBTS$Quarter, cpue_IBTS$Ship, cpue_IBTS$HaulNo, cpue_IBTS$ShootLat, cpue_IBTS$ShootLon, sep="_")
+
 ```
+
+
+
 
 We have a similar but slightly different data set for BTS. However, this dataset has many more columns that we do not really need for these examples, and that we thus remove before combining the IBTS and BTS data sets. Here, the "zero hauls" have lengthclass NA and the number per haul is NA. These observations are then set to zero, so that we have the same structure as in the IBTS data set. 
 
 ```{r, eval=TRUE, echo=TRUE}
 cpue_BTS  <- read.csv(file.path(path,"CPUE per length per Hour and Swept Area_2017-07-12 11_29_36.csv"), stringsAsFactors = F)
 cpue_BTS <- cpue_BTS[!(names(cpue_BTS) %in% c("Country","DoorType","HaulLat","HaulLong","StatRec","DataType","Rigging","Tickler","Distance","Warplngt","TowDir","WindDir","WindSpeed","SwellDir","SwellHeight","StNo","Month","Day","TimeShot","Stratum","ICESArea","DateofCalculation", "Area", "SubArea", "DayNight","Species", "Sex","SpecVal","SubFactor","GearExp","SweepLngt","Netopening","BycSpecRecCode","StdSpecRecCode","HaulVal","CPUE_number_per_hour","CPUE_number_per_km2","SweptArea_km2","DistanceDerived","BeamWidth", "HLNoAtLngt"))]
+surface
 cpue_BTS[is.na(cpue_BTS$LngtClass),]$NoPerHaul <- 0
 cpue_BTS[is.na(cpue_BTS$LngtClass),]$LngtClass <- 0
+
+cpue_BTS$surface <- cpue_BTS$Distance * cpue_BTS$Beamwidth
+
+cpue_BTS$uniqueHaul <-   paste(cpue_BTS$Year, cpue_BTS$Survey, cpue_BTS$Quarter, cpue_BTS$Ship, cpue_BTS$HaulNo, cpue_BTS$ShootLat, cpue_BTS$ShootLon, sep="_")
+
 ```
 
 
@@ -54,7 +66,6 @@ Now that the IBTS and BTS data sets are combined we want to make a set where we 
 
 Once the trawllist is make we use epand.grid() to make a combination of all hauls and lenght classes. This set is merged with our original data set.
 ```{r, eval=TRUE, echo=TRUE}
-cpue$uniqueHaul <-   paste(cpue$Year, cpue$Survey, cpue$Quarter, cpue$Ship, cpue$HaulNo, cpue$ShootLat, cpue$ShootLon, sep="_")
 trawllist <- cpue[!duplicated(cpue$uniqueHaul),!names( cpue) %in% c("Species","AphiaID","NoPerHaul","Sex", "LngtClass")]
 
 #expand grid 
@@ -613,4 +624,120 @@ I3nb <- inla(eval(fsp), family = "nbinomial",
 
 ```{r, eval=T, echo=T}
 summary(I3nb)
+```
+
+## Using swept area estimates
+Reread IBTS data 
+
+```{r, eval=T, echo=TRUE}
+cpue_IBTS <- read.csv(file.path(path,"CPUE per length per haul_2017-07-12 11_18_36.csv"), stringsAsFactors = F)
+cpue_IBTS$NoPerHaul <- round(cpue_IBTS$CPUE_number_per_hour*(cpue_IBTS$HaulDur/60))
+cpue_IBTS <- cpue_IBTS[!(names(cpue_IBTS) %in% c("DateofCalculation", "Area", "SubArea", "DayNight","Species","Sex","DateTime","CPUE_number_per_hour"))]
+
+cpue_IBTS$uniqueHaul <-   paste(cpue_IBTS$Year, cpue_IBTS$Survey, cpue_IBTS$Quarter, cpue_IBTS$Ship, cpue_IBTS$HaulNo, cpue_IBTS$ShootLat, cpue_IBTS$ShootLon, sep="_")
+
+```
+
+
+File contains HH records in exchange files for IBTS. NA for door spread and distance are coded as -9, so make NAs of those. 
+```{r, eval=T, echo=T}
+HH_IBTS <- read.csv(file.path(path,"Exchange Data_2017-07-14 09_26_25.csv"), stringsAsFactors = F)
+
+HH_IBTS$uniqueHaul <-  paste(HH_IBTS$Year, HH_IBTS$Survey, HH_IBTS$Quarter, HH_IBTS$Ship, HH_IBTS$HaulNo, HH_IBTS$ShootLat, HH_IBTS$ShootLon, sep="_")
+
+HH_IBTS[HH_IBTS$DoorSpread == -9,]$DoorSpread <- NA
+HH_IBTS[HH_IBTS$Distance == -9,]$Distance <- NA
+HH_IBTS[HH_IBTS$Netopening == -9,]$Netopening <- NA
+
+HH_IBTS$surface <- HH_IBTS$Distance * HH_IBTS$Netopening
+```
+
+Select only relevant variables, and remove all hauls longer than 90 minutes
+```{r, eval=T, echo=T}
+HH_IBTS <- HH_IBTS[names(HH_IBTS) %in% c("uniqueHaul", "surface", "HaulDur","Doorspread","Ditance","Netopening","Warplngt")]
+HH_IBTS <- HH_IBTS[HH_IBTS$HaulDur<=90,]
+```
+
+Plot surface against duration hoping to find corr
+```{r, eval=T, echo=T}
+plot(x=HH_IBTS$HaulDur,y=HH_IBTS$surface)
+summary(lm(surface~HaulDur, data=HH_IBTS))
+```
+
+
+Merge haulinfo to full cpue set
+```{r, eval=T, echo=T}
+cpue_IBTS <- merge(cpue_IBTS, HH_IBTS, all.x=T, all.y=F)
+```
+
+
+
+```{r, eval=TRUE, echo=TRUE}
+cpue_BTS  <- read.csv(file.path(path,"CPUE per length per Hour and Swept Area_2017-07-12 11_29_36.csv"), stringsAsFactors = F)
+cpue_BTS <- cpue_BTS[!(names(cpue_BTS) %in% c("Country","DoorType","HaulLat","HaulLong","StatRec","DataType","Rigging","Tickler","Distance","Warplngt","TowDir","WindDir","WindSpeed","SwellDir","SwellHeight","StNo","Month","Day","TimeShot","Stratum","ICESArea","DateofCalculation", "Area", "SubArea", "DayNight","Species", "Sex","SpecVal","SubFactor","GearExp","SweepLngt","Netopening","BycSpecRecCode","StdSpecRecCode","HaulVal","CPUE_number_per_hour","CPUE_number_per_km2","SweptArea_km2","DistanceDerived","BeamWidth", "HLNoAtLngt"))]
+surface
+cpue_BTS[is.na(cpue_BTS$LngtClass),]$NoPerHaul <- 0
+cpue_BTS[is.na(cpue_BTS$LngtClass),]$LngtClass <- 0
+
+cpue_BTS$surface <- cpue_BTS$Distance * cpue_BTS$Beamwidth
+
+cpue_BTS$uniqueHaul <-   paste(cpue_BTS$Year, cpue_BTS$Survey, cpue_BTS$Quarter, cpue_BTS$Ship, cpue_BTS$HaulNo, cpue_BTS$ShootLat, cpue_BTS$ShootLon, sep="_")
+
+```
+
+```{r, eval=TRUE, echo=TRUE}
+cpue <- rbind(cpue_BTS,cpue_IBTS)
+```
+
+
+Now that the IBTS and BTS data sets are combined we want to make a set where we have counts for all hauls and all lenghts. This means first making an dentifier for each unique haul (based on the information we have for all the hauls). This identifier is used to make a "trawllist" where all the information for the hauls is stored.
+
+Once the trawllist is make we use epand.grid() to make a combination of all hauls and lenght classes. This set is merged with our original data set.
+```{r, eval=TRUE, echo=TRUE}
+trawllist <- cpue[!duplicated(cpue$uniqueHaul),!names( cpue) %in% c("Species","AphiaID","NoPerHaul","Sex", "LngtClass")]
+
+#expand grid 
+haulsLengths <- expand.grid(uniqueHaul=unique(cpue$uniqueHaul),LngtClass=unique(cpue$LngtClass), stringsAsFactors = F)
+full_cpue <- merge(haulsLengths,cpue[names(cpue) %in% c("uniqueHaul", "LngtClass","NoPerHaul")], all.x=T)
+rm(haulsLengths)
+head(full_cpue)
+```
+
+After we merged all possible combinations with the data we now have NAs for those lengts and hauls where the catch is zero, and so we set those to zero. This data is subsequently merged to the trawllist so that we now have all information together. 
+```{r, eval=TRUE, echo=TRUE}
+full_cpue[is.na(full_cpue$NoPerHaul),]$NoPerHaul <- 0
+full_cpue  <- merge(full_cpue,trawllist, all.x=T)
+```
+
+The records that have lenghts equal to zero (that indicated zero hauls in our original set ) now need to be removed because we have all the information we need (these hauls now have zero catch for the full length range observed in the survey). 
+
+In addition, there are some observations that are highly unlikely: For instance there is a single observation of an individual of 100 cm (in 1977). This is suspicious, and we remove it from the data. 
+
+
+```{r, eval=TRUE, echo=TRUE}
+#now remove zero lengths
+full_cpue <- full_cpue[full_cpue$LngtClass> 0,]
+
+full_cpue <- full_cpue[full_cpue$LngtClass< 990,]
+```
+
+For our spatial correlation we will need an isomorphic coordinate system. Therefore we transform the latitudes and longitudes to UTM coordinates. these UTM coordinates are given in meters, so we divide them by 1000 to get kilometers.
+```{r, eval=TRUE, echo=TRUE}
+UTM <- project(cbind(full_cpue$ShootLong, full_cpue$ShootLat), "+proj=utm +zone=31U ellps=WGS84") 
+
+full_cpue$Xkm <- UTM[,1]/1000
+full_cpue$Ykm <- UTM[,2]/1000
+```
+
+
+The INLA code does not like special characters in some of the variable names, like the hyphen in "NS-IBTS". Therefore we rename the survey to NSIBTS. 
+```{r, eval=TRUE, echo=TRUE}
+#recode survey names so that there are no special characters
+full_cpue[full_cpue$Survey=="NS-IBTS",]$Survey <- "NSIBTS"
+```
+
+
+```{r, eval=TRUE, echo=TRUE}
+# make selection of  fullset.
+cpue_subset <- full_cpue[full_cpue$Year >= 2013,]
 ```
