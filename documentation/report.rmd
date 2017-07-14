@@ -44,12 +44,13 @@ We have a similar but slightly different data set for BTS. However, this dataset
 
 ```{r, eval=TRUE, echo=TRUE}
 cpue_BTS  <- read.csv(file.path(path,"CPUE per length per Hour and Swept Area_2017-07-12 11_29_36.csv"), stringsAsFactors = F)
-cpue_BTS <- cpue_BTS[!(names(cpue_BTS) %in% c("Country","DoorType","HaulLat","HaulLong","StatRec","DataType","Rigging","Tickler","Distance","Warplngt","TowDir","WindDir","WindSpeed","SwellDir","SwellHeight","StNo","Month","Day","TimeShot","Stratum","ICESArea","DateofCalculation", "Area", "SubArea", "DayNight","Species", "Sex","SpecVal","SubFactor","GearExp","SweepLngt","Netopening","BycSpecRecCode","StdSpecRecCode","HaulVal","CPUE_number_per_hour","CPUE_number_per_km2","SweptArea_km2","DistanceDerived","BeamWidth", "HLNoAtLngt"))]
-surface
+
+cpue_BTS <- cpue_BTS[!(names(cpue_BTS) %in% c("Country","DoorType","HaulLat","HaulLong","StatRec","DataType","Rigging","Tickler","Warplngt","TowDir","WindDir","WindSpeed","SwellDir","SwellHeight","StNo","Month","Day","TimeShot","Stratum","ICESArea","DateofCalculation", "Area", "SubArea", "DayNight","Species", "Sex","SpecVal","SubFactor","GearExp","SweepLngt","Netopening","BycSpecRecCode","StdSpecRecCode","HaulVal","CPUE_number_per_hour","CPUE_number_per_km2","SweptArea_km2","DistanceDerived", "HLNoAtLngt"))]
+
 cpue_BTS[is.na(cpue_BTS$LngtClass),]$NoPerHaul <- 0
 cpue_BTS[is.na(cpue_BTS$LngtClass),]$LngtClass <- 0
 
-cpue_BTS$surface <- cpue_BTS$Distance * cpue_BTS$Beamwidth
+cpue_BTS$surface <- cpue_BTS$Distance * cpue_BTS$BeamWidth
 
 cpue_BTS$uniqueHaul <-   paste(cpue_BTS$Year, cpue_BTS$Survey, cpue_BTS$Quarter, cpue_BTS$Ship, cpue_BTS$HaulNo, cpue_BTS$ShootLat, cpue_BTS$ShootLon, sep="_")
 
@@ -58,7 +59,8 @@ cpue_BTS$uniqueHaul <-   paste(cpue_BTS$Year, cpue_BTS$Survey, cpue_BTS$Quarter,
 
 Next we combine the two sets into one.
 ```{r, eval=TRUE, echo=TRUE}
-cpue <- rbind(cpue_BTS,cpue_IBTS)
+cols <- intersect(colnames(cpue_BTS), colnames(cpue_IBTS))
+cpue <- rbind(cpue_BTS[,cols],cpue_IBTS[,cols])
 ```
 
 
@@ -250,10 +252,10 @@ hist(cpue_subset$NoPerHaul,200, xlim=c(0,50))
 
 
 ```{r, eval=T, echo=T, fig.width=8, fig.height=4}
-wproj <- inla.mesh.projector(mesh1, xlim = range(Loc[,1]), ylim = range(Loc[,2])) 
+wproj <- inla.mesh.projector(mesh1a, xlim = range(Loc[,1]), ylim = range(Loc[,2])) 
 
 wm.pm100100  <- inla.mesh.project(wproj, I1nb$summary.random$w$mean)
-wsd.pm100100 <- inla.mesh.project(wproj,I1nb$summary.random$w$sd)
+wsd.pm100100 <- inla.mesh.project(wproj, I1nb$summary.random$w$sd)
     
 grid     <- expand.grid(x = wproj$x, y = wproj$y)
 grid$zm  <- as.vector(wm.pm100100)   
@@ -338,88 +340,6 @@ inla.pmarginal(inla.qmarginal(
 
 ```
 
-Next we want to simulate a large number of 
-```{r, eval=FALSE, echo=T}
-# Simulate from model I1nb
-
-# Simulation study spatial Negbin model.
-# First set random seed and the number of simulations
-set.seed(12345)
-NSim <- 1000
-
-# Carry out the simulation
-Sim <- inla.posterior.sample(n = NSim, result = I1nb)
-
-# Now we have 1000 simulated betas and also 1000 spatial fields w 
-# Use these to calculate 1000 times the expected values mu,
-# and simulate count data from these using rpois
-
-# X matrix
-#Xm      <- model.matrix(~BreedingD.std + Rain.std, data = cpue_subset)
-Xm <- model.matrix(~  fYear + fSurvey +  HaulDur  ,  data = cpue_subset)
-
-# Create space to store the information
-N    <- nrow(cpue_subset)
-Ysim <- matrix(nrow = N, ncol = NSim)
-mu.i <- matrix(nrow = N, ncol = NSim)
-Xm   <- as.matrix(Xm)
-Am   <- as.matrix(A3)
-
-# We are calculating a Fixed part (X * beta) and also the random part (A * w)
-for (i in 1: NSim){
-  Betas    <- Sim[[i]]$latent[c(987, 988, 989)]
-  wk       <- Sim[[i]]$latent[416:986]
-  eta      <- Xm %*% Betas + Am %*% wk
-  mu.i[,i] <- exp(eta)
-  Ysim[,i] <- rpois(n = nrow(OCW), lambda = mu.i[,i])
-}
-
-# Now we have 1,000 simulated count data sets from the model
-
-# And plot the results of the simulation study
-Z <- matrix(nrow = max(Ysim)+1, ncol = NSim)
-for (i in 1: NSim){
-	zi <- table(Ysim[,i])
-	I <- as.numeric(names(zi)) + 1
-	Z[I,i] <- zi
-}
-
-par(mfrow = c(1,1), mar = c(5,5,2,2), cex.lab = 1.5)
-Z[is.na(Z)] <- 0
-Xi <- 0: max(Ysim)
-AverageTable <- rowSums(Z) / NSim
-
-AverageTable <- rowSums(Z) / NSim
-apply(Z, 1, mean)
-SD <- apply(Z, 1, sd)
-
-plot(x = Xi, y = AverageTable, type = "h", lwd = 5,
-	 xlab = "Simulated number of fledged chicks",
-	 ylab = "Frequencies",
-	 ylim = c(0, 100))
-		
-# Add SDs
-nx <- length(SD)
-NamesZ <- Xi
-for (i in 1:nx){
-    segments(x0 = NamesZ[i], x1 = NamesZ[i], y0 = AverageTable[i], y1 = AverageTable[i] + SD[i], lwd = 15, col = 1)
-}
-			
-#And add the table for the observed data
-Zs <- table(OCW$NumFledg)
-nx <- length(Zs)
-NamesZ <- as.numeric(names(Zs))
-for (i in 1:nx){
-    segments(x0 = NamesZ[i] + 0.2, x1 = NamesZ[i] + 0.2, y0 = 0, y1 = Zs[i], lwd = 2, col = 2)
-}
-
-# The thick black lines represent the average frequency table. The big cocoon on top of it
-# is the standard deviation of the simulations. The thin red line is the frequenxy table for the observed data.
-
-# The model does not predict enough zeros. It predicts too many ones.
-#############################################		
-		
-```
 
 ##Including length in the analysis
 
@@ -443,7 +363,7 @@ cpue_subset <- aggregate(NoPerHaul~ LngtClass + uniqueHaul+Survey+  Quarter + Sh
 We subsample the zero observations, but those remaining will receive a higher weight in the final model.  
 ```{r, eval=TRUE, echo=TRUE}
 cpue_subset_temp  <- cpue_subset[cpue_subset$NoPerHaul > 0,]
-cpue_subset_temp  <-rbind(cpue_subset_temp, cpue_subset[sample(which(cpue_subset$NoPerHaul==0),6000),])
+cpue_subset_temp  <-rbind(cpue_subset_temp, cpue_subset[sample(which(cpue_subset$NoPerHaul==0),9000),])
 
 cpue_subset <- cpue_subset_temp
 ```
@@ -459,8 +379,8 @@ Next we need a mesh for the spatial data. Because we do not want our spatial cor
 ```{r, eval=TRUE, echo=TRUE}
 
 ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
-mesh2    <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(150))
-plot(mesh2)
+mesh2a    <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(150))
+plot(mesh2a)
 points(Loc, col = 1, pch = 16, cex = 0.5)
 ```
 
@@ -487,13 +407,14 @@ Now that we have a 1 dimensional mesh for the lengths, we use it  to construct a
 ```{r, eval=T, echo=T}
 # 2. Define the weighting factors a_ik (projector matrix).
 NGroups <- length(Knots) # = 7  
-A2      <- inla.spde.make.A(mesh  = mesh2,                                                                        loc   = Loc,
+A2      <- inla.spde.make.A(mesh  = mesh2a,
+                            loc   = Loc,
                             group = cpue_subset$LngtClass, 
                        group.mesh = mesh.t)
 dim(A2) 
 
 # 3. Define the spde
-spde  <- inla.spde2.matern(mesh2)
+spde  <- inla.spde2.matern(mesh2a)
 ```
 
 We need to make an inla.spde model object for a Matern model, but we still have that available from the model without size structure. That object was named "spde". We use it to make a list of named index vectors for the SPDE model. Note that the command for making the list of index vectors now includes an argument for the groups. 
@@ -557,7 +478,7 @@ The "UTMmap" object for creating the maps we still have.
 w <- I2nb$summary.random$w$mean
 # length of w is mesh$n * NGroups
 
-wproj <- inla.mesh.projector(mesh2, xlim = range(Loc[,1]), ylim = range(Loc[,2])) 
+wproj <- inla.mesh.projector(mesh2a, xlim = range(Loc[,1]), ylim = range(Loc[,2])) 
 
 grid <- expand.grid(IDX=1:NGroups, x = wproj$x, y = wproj$y,zm=NA)
 
@@ -609,12 +530,12 @@ Stack3 <- inla.stack(
 
 ```
 
-```{r, eval=T, echo=T}
+```{r, eval=FALSE, echo=T}
 fsp <- parse(text=c("y ~ -1 + Intercept + ",
                     paste(c(names(X)," f(w, model = spde, group =       w.group, control.group = list(model = 'ar1'))", "f(LngtClass, group=fSurvey,'rw2')",collapse =" + ")))
 ```
 
-```{r, eval=T, echo=T}
+```{r, eval=FALSE, echo=T}
 #INLA:::inla.dynload.workaround() 
 I3nb <- inla(eval(fsp), family = "nbinomial",
            data=inla.stack.data(Stack3),
@@ -622,7 +543,7 @@ I3nb <- inla(eval(fsp), family = "nbinomial",
            control.predictor = list(A = inla.stack.A(Stack3)))
 ```
 
-```{r, eval=T, echo=T}
+```{r, eval=FALSE, echo=T}
 summary(I3nb)
 ```
 
@@ -674,19 +595,21 @@ cpue_IBTS <- merge(cpue_IBTS, HH_IBTS, all.x=T, all.y=F)
 
 ```{r, eval=TRUE, echo=TRUE}
 cpue_BTS  <- read.csv(file.path(path,"CPUE per length per Hour and Swept Area_2017-07-12 11_29_36.csv"), stringsAsFactors = F)
-cpue_BTS <- cpue_BTS[!(names(cpue_BTS) %in% c("Country","DoorType","HaulLat","HaulLong","StatRec","DataType","Rigging","Tickler","Distance","Warplngt","TowDir","WindDir","WindSpeed","SwellDir","SwellHeight","StNo","Month","Day","TimeShot","Stratum","ICESArea","DateofCalculation", "Area", "SubArea", "DayNight","Species", "Sex","SpecVal","SubFactor","GearExp","SweepLngt","Netopening","BycSpecRecCode","StdSpecRecCode","HaulVal","CPUE_number_per_hour","CPUE_number_per_km2","SweptArea_km2","DistanceDerived","BeamWidth", "HLNoAtLngt"))]
+cpue_BTS <- cpue_BTS[!(names(cpue_BTS) %in% c("Country","DoorType","HaulLat","HaulLong","StatRec","DataType","Rigging","Tickler","Warplngt","TowDir","WindDir","WindSpeed","SwellDir","SwellHeight","StNo","Month","Day","TimeShot","Stratum","ICESArea","DateofCalculation", "Area", "SubArea", "DayNight","Species", "Sex","SpecVal","SubFactor","GearExp","SweepLngt","Netopening","BycSpecRecCode","StdSpecRecCode","HaulVal","CPUE_number_per_hour","CPUE_number_per_km2","SweptArea_km2","DistanceDerived", "HLNoAtLngt"))]
 surface
 cpue_BTS[is.na(cpue_BTS$LngtClass),]$NoPerHaul <- 0
 cpue_BTS[is.na(cpue_BTS$LngtClass),]$LngtClass <- 0
 
-cpue_BTS$surface <- cpue_BTS$Distance * cpue_BTS$Beamwidth
+cpue_BTS$surface <- cpue_BTS$Distance * cpue_BTS$BeamWidth
 
 cpue_BTS$uniqueHaul <-   paste(cpue_BTS$Year, cpue_BTS$Survey, cpue_BTS$Quarter, cpue_BTS$Ship, cpue_BTS$HaulNo, cpue_BTS$ShootLat, cpue_BTS$ShootLon, sep="_")
 
 ```
 
+Next we combine the two sets into one.
 ```{r, eval=TRUE, echo=TRUE}
-cpue <- rbind(cpue_BTS,cpue_IBTS)
+cols <- intersect(colnames(cpue_BTS), colnames(cpue_IBTS))
+cpue <- rbind(cpue_BTS[,cols],cpue_IBTS[,cols])
 ```
 
 
@@ -740,4 +663,58 @@ full_cpue[full_cpue$Survey=="NS-IBTS",]$Survey <- "NSIBTS"
 ```{r, eval=TRUE, echo=TRUE}
 # make selection of  fullset.
 cpue_subset <- full_cpue[full_cpue$Year >= 2013,]
+```
+
+Do actual INLA for counts per km2 :)
+
+
+Next we want to simulate 1000 realizations and integrate over surface (per year) so that we get a population level estimate.  
+```{r, eval=FALSE, echo=T}
+# Simulate from model I1nb
+
+# Simulation study spatial Negbin model.
+# First set random seed and the number of simulations
+set.seed(12345)
+NSim <- 1000
+
+# Carry out the simulation
+Sim <- inla.posterior.sample(n = NSim, result = I1nb)
+
+# Now we have 1000 simulated betas and also 1000 spatial fields w 
+# Use these to calculate 1000 times the expected values mu,
+# and simulate count data from these using rpois
+
+# X matrix
+#Xm      <- model.matrix(~BreedingD.std + Rain.std, data = cpue_subset)
+Xm <- model.matrix(~  fYear + fSurvey +  HaulDur  ,  data = cpue_subset)
+
+# Create space to store the information
+N    <- nrow(cpue_subset)
+Ysim <- matrix(nrow = N, ncol = NSim)
+mu.i <- matrix(nrow = N, ncol = NSim)
+Xm   <- as.matrix(Xm)
+Am   <- as.matrix(A3)
+
+# We are calculating a Fixed part (X * beta) and also the random part (A * w)
+for (i in 1: NSim){
+  Betas    <- Sim[[i]]$latent[c(987, 988, 989)]
+  wk       <- Sim[[i]]$latent[416:986]
+  eta      <- Xm %*% Betas + Am %*% wk
+  mu.i[,i] <- exp(eta)
+  Ysim[,i] <- rpois(n = nrow(OCW), lambda = mu.i[,i])
+}
+
+# Now we have 1,000 simulated count data sets from the model
+
+# And plot the results of the simulation study
+Z <- matrix(nrow = max(Ysim)+1, ncol = NSim)
+for (i in 1: NSim){
+	zi <- table(Ysim[,i])
+	I <- as.numeric(names(zi)) + 1
+	Z[I,i] <- zi
+}
+
+
+#############################################		
+		
 ```
