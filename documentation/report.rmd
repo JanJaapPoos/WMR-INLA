@@ -32,36 +32,36 @@ We will use the BTS and IBTS data set. In this case we downloaded the data for s
 First we read in the IBTS dataset. From these data, the hauls in the North Sea are selected by keeping only those that are in (roundfish)areas 1-7. 
 
 ```{r, eval=T, echo=TRUE}
-cpue_IBTS <- read.csv(file.path(path,"CPUE per length per haul_2017-07-12 11_18_36.csv"), stringsAsFactors = F)
-cpue_IBTS <- cpue_IBTS[cpue_IBTS$Area <= 7,]
+IBTS <- read.csv(file.path(path,"CPUE per length per haul_2017-07-12 11_18_36.csv"), stringsAsFactors = F)
+IBTS <- IBTS[IBTS$Area <= 7,]
 ```
 
 The lengths are stored in mm and the CPUE is stored as number per hour. "Zero hauls" are included (hauls where no individuals are counted)
 
 ```{r, eval=T, echo=TRUE}
-cpue_IBTS$NoPerHaul <- round(cpue_IBTS$CPUE_number_per_hour*(cpue_IBTS$HaulDur/60))
+IBTS$NoPerHaul <- round(IBTS$CPUE_number_per_hour*(IBTS$HaulDur/60))
 
-cpue_IBTS <- within(cpue_IBTS, haulCode <-  paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
+IBTS <- within(IBTS, haulCode <-  paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
 ```
 
 We have a similar but slightly different data set for BTS. Here, the "zero hauls" have lengthclass NA and the number per haul is NA. These observations are then set to zero, so that we have the same structure as in the IBTS data set. 
 
 ```{r, eval=TRUE, echo=TRUE}
-cpue_BTS  <- read.csv(file.path(path,"CPUE per length per Hour and Swept Area_2017-07-12 11_29_36.csv"), stringsAsFactors = F)
+BTS  <- read.csv(file.path(path,"CPUE per length per Hour and Swept Area_2017-07-12 11_29_36.csv"), stringsAsFactors = F)
 
-cpue_BTS[is.na(cpue_BTS$LngtClass),]$NoPerHaul <- 0
-cpue_BTS[is.na(cpue_BTS$LngtClass),]$LngtClass <- 0
+BTS[is.na(BTS$LngtClass),]$NoPerHaul <- 0
+BTS[is.na(BTS$LngtClass),]$LngtClass <- 0
 
-cpue_BTS$surface <- cpue_BTS$Distance * cpue_BTS$BeamWidth
+BTS$surface <- BTS$Distance * BTS$BeamWidth
 
 #make haul code
-cpue_BTS <- within(cpue_BTS, haulCode <- paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
+BTS <- within(BTS, haulCode <- paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
 ```
 
 The BTS and IBTS datasets need to be combined the two sets into one, using rbind() to combine them by rows. The datasets can only be combined if they have the same columns. The columns that are shared by the two data sets are found using intersect().
 ```{r, eval=TRUE, echo=TRUE}
-cols <- intersect(colnames(cpue_BTS), colnames(cpue_IBTS))
-cpue <- rbind(cpue_BTS[,cols],cpue_IBTS[,cols])
+cols <- intersect(colnames(BTS), colnames(IBTS))
+cpue <- rbind(BTS[,cols],IBTS[,cols])
 
 #remove CPUE per hour that we do not need now that we have counts
 cpue <- cpue[,!names(cpue)=="CPUE_number_per_hour"]
@@ -163,7 +163,6 @@ Loc <- cbind(cpue_subset$Xkm , cpue_subset$Ykm )
 Next we need a mesh for the spatial data. Because we do not want our spatial correlations to pass landmasses (e.g. Denmark) we first make a nonconvex hull of the data points using inla.nonconvex.hull(). This convex hull is used as a boundary for making a 2d mesh. The generation of the actual mesh is done using inla.mesh.2d(). That function takes several arguments, incuding "cutoff" and "max.edge". These arguments specify how fine the final mesh will be. Finer meshes will be able to capture smaller scale spatial correlations, but require more comuting time in the inla model.
 
 ```{r, eval=TRUE, echo=TRUE}
-
 ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
 mesh1a    <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(100))
 ```
@@ -196,7 +195,6 @@ points(Loc, col = 1, pch = 16, cex = 0.3)
 
 Once the 2d mesh is made we construct a observation/prediction weight matrix for the model. This is also called the "projector matrix".
 ```{r, eval=TRUE, echo=TRUE}
-
 # 2. Define the weighting factors a_ik (also called the projector matrix).
 A1      <- inla.spde.make.A(mesh  = mesh1a, loc   = Loc)
 dim(A1)
@@ -219,11 +217,10 @@ cpue_subset$fYear   <- as.factor(cpue_subset$Year)
 cpue_subset$fSurvey <- as.factor(cpue_subset$Survey)
 ```
 
-Note that in code below the names in the model matrix should not contain any special characters! This is why we renamd the "NS-IBTS" survey" to "NSIBTS"
+Note that in code below the names in the model matrix should not contain any special characters! This is why we renamed the "NS-IBTS" survey to "NSIBTS"
 ```{r, eval=T, echo=T}
-  
 # 5. Make a stack. In this process we tell INLA at which points on the mesh we sampled the response variable and the covariates. 
-Xmatrix <- model.matrix(~  fYear + fSurvey +  HaulDur,  data = cpue_subset)
+Xmatrix <- model.matrix(~ fYear + fSurvey +  HaulDur,  data = cpue_subset)
 head(Xmatrix)
 ```
 
@@ -266,7 +263,6 @@ I1nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
 Once the INLA models are run, a summary can be printed for the two models. This summary contains much of the relevant information for the models.
 
 ```{r, eval=T, echo=T}
-
 summary(I1p)
 
 summary(I1nb)
@@ -279,7 +275,8 @@ quantile(I1nb$summary.fitted.values[idx,"mean"])
 quantile(cpue_subset$NoPerHaul)
 
 hist(I1nb$summary.fitted.values[idx,"mean"],200, xlim=c(0,50))
-hist(cpue_subset$NoPerHaul,200, xlim=c(0,50))
+obshist <- table(cpue_subset$NoPerHaul)
+points(x=names(obshist), y=c(obshist), pch=20)
 
 ```
 
@@ -609,56 +606,55 @@ We still have the IBTS data available in the cpue_IBTS object, but that does not
 
 File contains HH records in exchange files for IBTS. NA for door spread and distance are coded as -9, so make NAs of those. 
 ```{r, eval=T, echo=T}
-HH_IBTS <- read.csv(file.path(path,"Exchange Data_2017-07-14 09_26_25.csv"), stringsAsFactors = F)
+IBTSHH <- read.csv(file.path(path,"Exchange Data_2017-07-14 09_26_25.csv"), stringsAsFactors = F)
 
 
-HH_IBTS <- within(HH_IBTS, haulCode <-  paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
+IBTSHH <- within(IBTSHH, haulCode <-  paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
 
-HH_IBTS[HH_IBTS$DoorSpread == -9,]$DoorSpread <- NA
-HH_IBTS[HH_IBTS$Distance == -9,]$Distance <- NA
-HH_IBTS[HH_IBTS$Netopening == -9,]$Netopening <- NA
+IBTSHH[IBTSHH$DoorSpread == -9,]$DoorSpread <- NA
+IBTSHH[IBTSHH$Distance == -9,]$Distance <- NA
+IBTSHH[IBTSHH$Netopening == -9,]$Netopening <- NA
 
-HH_IBTS$surface <- HH_IBTS$Distance * HH_IBTS$Netopening
+IBTSHH$surface <- IBTSHH$Distance * IBTSHH$Netopening
 ```
 
 Select only relevant variables, and remove all hauls longer than 90 minutes
 ```{r, eval=T, echo=T}
-HH_IBTS <- HH_IBTS[names(HH_IBTS) %in% c("haulCode", "surface", "HaulDur","Doorspread","Ditance","Netopening","Warplngt")]
-HH_IBTS <- HH_IBTS[HH_IBTS$HaulDur<=90,]
+IBTSHH <- IBTSHH[names(IBTSHH) %in% c("haulCode", "surface", "HaulDur","Doorspread","Ditance","Netopening","Warplngt")]
+IBTSHH <- IBTSHH[IBTSHH$HaulDur<=90,]
 ```
 
 Plot surface against duration hoping to find corr
 ```{r, eval=T, echo=T}
-plot(x=HH_IBTS$HaulDur,y=HH_IBTS$surface)
-summary(lm(surface~HaulDur, data=HH_IBTS))
+plot(x=IBTSHH$HaulDur,y=IBTSHH$surface)
+summary(lm(surface~HaulDur, data=IBTSHH))
 ```
 
 
 Merge haulinfo to full cpue set
 ```{r, eval=T, echo=T}
-cpue_IBTS <- merge(cpue_IBTS, HH_IBTS, all.x=T, all.y=F)
+IBTS <- merge(IBTS, IBTSHH, all.x=T, all.y=F)
 ```
 
 
 
 ```{r, eval=TRUE, echo=TRUE}
-cpue_BTS  <- read.csv(file.path(path,"CPUE per length per Hour and Swept Area_2017-07-12 11_29_36.csv"), stringsAsFactors = F)
-cpue_BTS <- cpue_BTS[!(names(cpue_BTS) %in% c("Country","DoorType","HaulLat","HaulLong","StatRec","DataType","Rigging","Tickler","Warplngt","TowDir","WindDir","WindSpeed","SwellDir","SwellHeight","StNo","Month","Day","TimeShot","Stratum","ICESArea","DateofCalculation", "Area", "SubArea", "DayNight","Species", "Sex","SpecVal","SubFactor","GearExp","SweepLngt","Netopening","BycSpecRecCode","StdSpecRecCode","HaulVal","CPUE_number_per_hour","CPUE_number_per_km2","SweptArea_km2","DistanceDerived", "HLNoAtLngt"))]
-surface
-cpue_BTS[is.na(cpue_BTS$LngtClass),]$NoPerHaul <- 0
-cpue_BTS[is.na(cpue_BTS$LngtClass),]$LngtClass <- 0
+BTS  <- read.csv(file.path(path,"CPUE per length per Hour and Swept Area_2017-07-12 11_29_36.csv"), stringsAsFactors = F)
 
-cpue_BTS$surface <- cpue_BTS$Distance * cpue_BTS$BeamWidth
+BTS[is.na(BTS$LngtClass),]$NoPerHaul <- 0
+BTS[is.na(BTS$LngtClass),]$LngtClass <- 0
+
+BTS$surface <- BTS$Distance * BTS$BeamWidth
 
 #make haul code
-cpue_BTS <- within(cpue_BTS, haulCode <- paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
+BTS <- within(BTS, haulCode <- paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
 
 ```
 
 Next we combine the two sets into one.
 ```{r, eval=TRUE, echo=TRUE}
-cols <- intersect(colnames(cpue_BTS), colnames(cpue_IBTS))
-cpue <- rbind(cpue_BTS[,cols],cpue_IBTS[,cols])
+cols <- intersect(colnames(BTS), colnames(IBTS))
+cpue <- rbind(BTS[,cols],IBTS[,cols])
 ```
 
 
