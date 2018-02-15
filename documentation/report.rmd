@@ -36,53 +36,50 @@ cpue_IBTS <- read.csv(file.path(path,"CPUE per length per haul_2017-07-12 11_18_
 cpue_IBTS <- cpue_IBTS[cpue_IBTS$Area <= 7,]
 ```
 
-The lengths are stored in mm and the CPUE is stored as number per hour. "Zero hauls" are included (hauls where no individuals are c$
+The lengths are stored in mm and the CPUE is stored as number per hour. "Zero hauls" are included (hauls where no individuals are counted)
 
 ```{r, eval=T, echo=TRUE}
 cpue_IBTS$NoPerHaul <- round(cpue_IBTS$CPUE_number_per_hour*(cpue_IBTS$HaulDur/60))
-cpue_IBTS <- cpue_IBTS[!(names(cpue_IBTS) %in% c("DateofCalculation", "Area", "SubArea", "DayNight","Species","Sex","DateTime","CPUE_number_per_hour"))]
 
-cpue_IBTS$uniqueHaul <-  paste(cpue_IBTS$Year, cpue_IBTS$Survey, cpue_IBTS$Quarter, cpue_IBTS$Ship, cpue_IBTS$HaulNo, cpue_IBTS$ShootLat, cpue_IBTS$ShootLon, sep="_")
+cpue_IBTS <- within(cpue_IBTS, haulCode <-  paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
 ```
 
-We have a similar but slightly different data set for BTS. However, this dataset has many more columns that we do not really need for these examples, and that we thus remove before combining the IBTS and BTS data sets. Here, the "zero hauls" have lengthclass NA and the number per haul is NA. These observations are then set to zero, so that we have the same structure as in the IBTS data set. 
+We have a similar but slightly different data set for BTS. Here, the "zero hauls" have lengthclass NA and the number per haul is NA. These observations are then set to zero, so that we have the same structure as in the IBTS data set. 
 
 ```{r, eval=TRUE, echo=TRUE}
 cpue_BTS  <- read.csv(file.path(path,"CPUE per length per Hour and Swept Area_2017-07-12 11_29_36.csv"), stringsAsFactors = F)
-
-cpue_BTS <- cpue_BTS[!(names(cpue_BTS) %in% c("Country","DoorType","HaulLat","HaulLong","StatRec","DataType","Rigging","Tickler","Warplngt","TowDir","WindDir","WindSpeed",
-                                              "SwellDir","SwellHeight","StNo","Month","Day","TimeShot","Stratum","ICESArea","DateofCalculation", "Area", "SubArea", "DayNight",
-                                              "Species", "Sex","SpecVal","SubFactor","GearExp","SweepLngt","Netopening","BycSpecRecCode","StdSpecRecCode","HaulVal","CPUE_number_per_hour",
-                                              "CPUE_number_per_km2","SweptArea_km2","DistanceDerived", "HLNoAtLngt"))]
 
 cpue_BTS[is.na(cpue_BTS$LngtClass),]$NoPerHaul <- 0
 cpue_BTS[is.na(cpue_BTS$LngtClass),]$LngtClass <- 0
 
 cpue_BTS$surface <- cpue_BTS$Distance * cpue_BTS$BeamWidth
 
-cpue_BTS$uniqueHaul <-   paste(cpue_BTS$Year, cpue_BTS$Survey, cpue_BTS$Quarter, cpue_BTS$Ship, cpue_BTS$HaulNo, cpue_BTS$ShootLat, cpue_BTS$ShootLon, sep="_")
+cpue_BTS <- within(cpue_BTS, haulCode <- paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
 ```
 
-The BTS and IBTS datasets need to be combined the two sets into one, using rbind() to combine them by rows. The datasets can only e combined if they have the same columns. The columns that are shared by the two data sets are found using intersect().
+The BTS and IBTS datasets need to be combined the two sets into one, using rbind() to combine them by rows. The datasets can only be combined if they have the same columns. The columns that are shared by the two data sets are found using intersect().
 ```{r, eval=TRUE, echo=TRUE}
 cols <- intersect(colnames(cpue_BTS), colnames(cpue_IBTS))
 cpue <- rbind(cpue_BTS[,cols],cpue_IBTS[,cols])
+
+#remove CPUE per hour that we do not need now that we have counts
+cpue <- cpue[,!names(cpue)=="CPUE_number_per_hour"]
 ```
 
 
 Now that the IBTS and BTS data sets are combined we want to make a set where we have counts for all hauls and all lenghts. This means first making an dentifier for each unique haul (based on the information we have for all the hauls). This identifier is used to make a "trawllist" where all the information for the hauls is stored together with its unique identifier.
 
-Once the trawllist is make we use epand.grid() to make a combination of all hauls and lenght classes. This set is merged with our original data set.
+Once the trawllist is make we use expand.grid() to make a combination of all hauls and lenght classes. This set is merged with our original data set.
 ```{r, eval=TRUE, echo=TRUE}
-trawllist <- cpue[!duplicated(cpue$uniqueHaul),!names( cpue) %in% c("Species","AphiaID","NoPerHaul","Sex", "LngtClass")]
+trawllist <- cpue[!duplicated(cpue$haulCode),!names(cpue) %in% c("Species","AphiaID","NoPerHaul","Sex", "LngtClass")]
 
 #expand grid 
-haulsLengths <- expand.grid(uniqueHaul=unique(cpue$uniqueHaul),LngtClass=unique(cpue$LngtClass), stringsAsFactors = F)
-full_cpue <- merge(haulsLengths,cpue[names(cpue) %in% c("uniqueHaul", "LngtClass","NoPerHaul")], all.x=T)
+haulsLengths <- expand.grid(haulCode=unique(cpue$haulCode),LngtClass=unique(cpue$LngtClass), stringsAsFactors = F)
+full_cpue <- merge(haulsLengths,cpue[names(cpue) %in% c("haulCode", "LngtClass","NoPerHaul")], all.x=T)
 rm(haulsLengths)
 ```
 
-After we merged all possible combinations with the data we now have NAs for those lengts and hauls where the catch is zero, and so we set those to zero. This data is subsequently merged to the trawllist so that we now have all information together. 
+After we merged all possible combinations with the data we now have NAs for those lengts and hauls where the catch is zero, and so we set those to zero. This data is subsequently merged to the trawllist so that we have all information together. 
 ```{r, eval=TRUE, echo=TRUE}
 full_cpue[is.na(full_cpue$NoPerHaul),]$NoPerHaul <- 0
 full_cpue  <- merge(full_cpue,trawllist, all.x=T)
@@ -111,7 +108,7 @@ full_cpue$Ykm <- UTM[,2]/1000
 The INLA code does not like special characters in some of the variable names, like the hyphen in "NS-IBTS". Therefore we rename the survey to NSIBTS. 
 ```{r, eval=TRUE, echo=TRUE}
 #recode survey names so that there are no special characters
-full_cpue[full_cpue$Survey=="NS-IBTS",]$Survey <- "NSIBTS"
+full_cpue <- transform(full_cpue, Survey=gsub("-","",Survey))
 ```
 
 ## Subsetting and length aggregation
@@ -126,16 +123,24 @@ cpue_subset <- full_cpue[full_cpue$Year >= startyr,]
 In this example we thus start from `r startyr`.  The earlier we start, the more information we will obtain from the analysis on the annual changes in the count data. However, including more data also means we require more memory to store the model, and wait longer for the model to run. If too much data is used in the inla model, so that more computer memory is required than you have available, the model will crash. Now we have `r  nrow(cpue_subset)` rows left in cpue_subset. We start with a very simple analysis where we do not take length into account, and only analyse numbers per haul. Hence we aggregate the counts per haul.
 
 ```{r, eval=TRUE, echo=TRUE}
-cpue_subset <- aggregate(NoPerHaul ~ uniqueHaul + Survey +  Quarter + Ship + Gear  + HaulNo + Year + HaulDur + ShootLong + ShootLat +  Xkm + Ykm +  Depth, data= cpue_subset,FUN="sum")
+cpue_subset <- aggregate(NoPerHaul ~ haulCode + Survey +  Quarter + Ship + Gear  + HaulNo + Year + HaulDur + ShootLong + ShootLat +  Xkm + Ykm +  Depth, data= cpue_subset,FUN="sum")
 ```
 After the aggregation (now that the length information is removed) we have `r  nrow(cpue_subset)` rows in the data set. To give us a quick impression of the data we plot it in a map. The two surveys have different colors, red being the IBTS hauls and black being the BTS hauls. The size of the circles indicate the counts in each haul
 
 ```{r, eval=TRUE, echo=TRUE, dpi=600}
+par(mfrow=c(1,2))
 plot(cpue_subset$ShootLong,cpue_subset$ShootLat, 
-     cex=(cpue_subset$NoPerHaul)/10+0.1, 
+     cex=0.1, 
      col=as.numeric(as.factor(cpue_subset$Survey)),
      xlab="Longitude", ylab="Lattitude")
 map("world",add=T)
+
+plot(cpue_subset$ShootLong,cpue_subset$ShootLat, 
+     cex=(cpue_subset$NoPerHaul)/10, 
+     col=as.numeric(as.factor(cpue_subset$Survey)),
+     xlab="Longitude", ylab="Lattitude")
+map("world",add=T)
+
 ```
 Clearly the IBTS hauls cover a larger part of the North Sea, but the large catches for both are located in the same areas. 
 
@@ -597,23 +602,16 @@ summary(I3nb)
 ```
 
 ## Using swept area estimates
-Reread IBTS data 
+We still have the IBTS data available in the cpue_IBTS object, but that does not provide the swept area. For this, we need to read in the HH records of the exchange file 
 
-```{r, eval=T, echo=TRUE}
-cpue_IBTS <- read.csv(file.path(path,"CPUE per length per haul_2017-07-12 11_18_36.csv"), stringsAsFactors = F)
-cpue_IBTS$NoPerHaul <- round(cpue_IBTS$CPUE_number_per_hour*(cpue_IBTS$HaulDur/60))
-cpue_IBTS <- cpue_IBTS[!(names(cpue_IBTS) %in% c("DateofCalculation", "Area", "SubArea", "DayNight","Species","Sex","DateTime","CPUE_number_per_hour"))]
-
-cpue_IBTS$uniqueHaul <-   paste(cpue_IBTS$Year, cpue_IBTS$Survey, cpue_IBTS$Quarter, cpue_IBTS$Ship, cpue_IBTS$HaulNo, cpue_IBTS$ShootLat, cpue_IBTS$ShootLon, sep="_")
-
-```
 
 
 File contains HH records in exchange files for IBTS. NA for door spread and distance are coded as -9, so make NAs of those. 
 ```{r, eval=T, echo=T}
 HH_IBTS <- read.csv(file.path(path,"Exchange Data_2017-07-14 09_26_25.csv"), stringsAsFactors = F)
 
-HH_IBTS$uniqueHaul <-  paste(HH_IBTS$Year, HH_IBTS$Survey, HH_IBTS$Quarter, HH_IBTS$Ship, HH_IBTS$HaulNo, HH_IBTS$ShootLat, HH_IBTS$ShootLon, sep="_")
+
+HH_IBTS <- within(HH_IBTS, haulCode <-  paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
 
 HH_IBTS[HH_IBTS$DoorSpread == -9,]$DoorSpread <- NA
 HH_IBTS[HH_IBTS$Distance == -9,]$Distance <- NA
@@ -624,7 +622,7 @@ HH_IBTS$surface <- HH_IBTS$Distance * HH_IBTS$Netopening
 
 Select only relevant variables, and remove all hauls longer than 90 minutes
 ```{r, eval=T, echo=T}
-HH_IBTS <- HH_IBTS[names(HH_IBTS) %in% c("uniqueHaul", "surface", "HaulDur","Doorspread","Ditance","Netopening","Warplngt")]
+HH_IBTS <- HH_IBTS[names(HH_IBTS) %in% c("haulCode", "surface", "HaulDur","Doorspread","Ditance","Netopening","Warplngt")]
 HH_IBTS <- HH_IBTS[HH_IBTS$HaulDur<=90,]
 ```
 
