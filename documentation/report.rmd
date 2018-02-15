@@ -2,6 +2,10 @@
 ## An example of Starry ray in the North Sea, using INLA
 #### Authors: Geert Aarts, Niels Hintzen, Jan Jaap Poos, Ingrid Tulp
 
+```{r set-options, echo=FALSE, cache=FALSE}
+options(width = 120)
+```
+
 Most of the data we collect at sea is spatially and temporally correlated, such as the International Bottom Trawl Survey (IBTS) or Beam Trawl survey data (BTS) survey data. Often we want to infer temporal or spatial trends in these data.
 
 The statistical package INLA has the advantage over other software in R that it can combine spatial, temporal, zero-inflated, random effects etc models all in one. It therefore is very powerful and may become your one-stop-to-go package. 
