@@ -54,6 +54,7 @@ cpue_BTS[is.na(cpue_BTS$LngtClass),]$LngtClass <- 0
 
 cpue_BTS$surface <- cpue_BTS$Distance * cpue_BTS$BeamWidth
 
+#make haul code
 cpue_BTS <- within(cpue_BTS, haulCode <- paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
 ```
 
@@ -391,7 +392,7 @@ Once we have 5 cm lenght classes, we need aggregate() to sum the numbers per hau
 ```{r, eval=TRUE, echo=TRUE}
 cpue_subset$LngtClass <- round(cpue_subset$LngtClass/50)*50
 
-cpue_subset <- aggregate(NoPerHaul~ LngtClass + uniqueHaul + Survey + Quarter + Ship + Gear  + HaulNo + Year + HaulDur + ShootLong +
+cpue_subset <- aggregate(NoPerHaul~ LngtClass + haulCode + Survey + Quarter + Ship + Gear  + HaulNo + Year + HaulDur + ShootLong +
                                     ShootLat + Xkm + Ykm +  Depth, data= cpue_subset,FUN="sum")
 ```
 
@@ -649,7 +650,8 @@ cpue_BTS[is.na(cpue_BTS$LngtClass),]$LngtClass <- 0
 
 cpue_BTS$surface <- cpue_BTS$Distance * cpue_BTS$BeamWidth
 
-cpue_BTS$uniqueHaul <-   paste(cpue_BTS$Year, cpue_BTS$Survey, cpue_BTS$Quarter, cpue_BTS$Ship, cpue_BTS$HaulNo, cpue_BTS$ShootLat, cpue_BTS$ShootLon, sep="_")
+#make haul code
+cpue_BTS <- within(cpue_BTS, haulCode <- paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
 
 ```
 
@@ -664,11 +666,11 @@ Now that the IBTS and BTS data sets are combined we want to make a set where we 
 
 Once the trawllist is make we use epand.grid() to make a combination of all hauls and lenght classes. This set is merged with our original data set.
 ```{r, eval=TRUE, echo=TRUE}
-trawllist <- cpue[!duplicated(cpue$uniqueHaul),!names( cpue) %in% c("Species","AphiaID","NoPerHaul","Sex", "LngtClass")]
+trawllist <- cpue[!duplicated(cpue$haulCode),!names( cpue) %in% c("Species","AphiaID","NoPerHaul","Sex", "LngtClass")]
 
 #expand grid 
-haulsLengths <- expand.grid(uniqueHaul=unique(cpue$uniqueHaul),LngtClass=unique(cpue$LngtClass), stringsAsFactors = F)
-full_cpue <- merge(haulsLengths,cpue[names(cpue) %in% c("uniqueHaul", "LngtClass","NoPerHaul")], all.x=T)
+haulsLengths <- expand.grid(haulCode=unique(cpue$haulCode),LngtClass=unique(cpue$LngtClass), stringsAsFactors = F)
+full_cpue <- merge(haulsLengths,cpue[names(cpue) %in% c("haulCode", "LngtClass","NoPerHaul")], all.x=T)
 rm(haulsLengths)
 head(full_cpue)
 ```
