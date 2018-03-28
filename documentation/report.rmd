@@ -192,7 +192,7 @@ Next we need a mesh for the spatial data. Because we do not want our spatial cor
 
 ```{r, eval=TRUE, echo=TRUE}
 ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
-mesh1a   <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(70))
+mesh1a   <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(30))
 ```
 
 As an alternative to using the nonconvex hull function to generate a boundary,, we can also take the shapefile of the North Seaas the boundary of the mesh, which makes prediction in the future easier, as we know no record can be found outside the North Sea area (give or take evolution). We first load the ICES shapefiles which were downloaded from http://gis.ices.dk/sf/. We load this shapefiles, merge layers together, transform to UTM, convert UTM to km rather than meters and finally create a mesh. 
@@ -542,54 +542,53 @@ Stack2 <- inla.stack(
 
 ```
 
-```{r, eval=T, echo=T}
+```{r, eval=F, echo=T}
 fsp <- parse(text=c("y ~ -1 + Intercept + ",
                     paste(c(names(X)," f(w, model = spde, group =       w.group, control.group = list(model = 'ar1'))"),collapse =" + ")))
 ```
 
-```{r, eval=T, echo=T}
-#INLA:::inla.dynload.workaround() 
-#I2nb <- inla(eval(fsp), family = "nbinomial",
-#           data=inla.stack.data(Stack2),
-#           control.compute = list(dic = TRUE, waic = TRUE),
-#           control.predictor = list(A = inla.stack.A(Stack2)))
+```{r, eval=F, echo=T}
+I2nb <- inla(eval(fsp), family = "nbinomial",
+           data=inla.stack.data(Stack2),
+           control.compute = list(dic = TRUE, waic = TRUE),
+           control.predictor = list(A = inla.stack.A(Stack2)))
 ```
 
-```{r, eval=T, echo=T}
-#summary(I2nb)
+```{r, eval=F, echo=T}
+summary(I2nb)
 ```
 
 We still have The "UTMmap" object for creating the maps from the previous analysis.
 
-```{r, eval=T, echo=T}
-#w <- I2nb$summary.random$w$mean
+```{r, eval=F, echo=T}
+w <- I2nb$summary.random$w$mean
 # length of w is mesh$n * NGroups
-#wproj <- inla.mesh.projector(mesh2a, xlim = range(Loc[,1]), ylim = range(Loc[,2])) 
+wproj <- inla.mesh.projector(mesh2a, xlim = range(Loc[,1]), ylim = range(Loc[,2])) 
 
-#grid <- expand.grid(length=knots, x = wproj$x, y = wproj$y,zm=NA)
+grid <- expand.grid(length=knots, x = wproj$x, y = wproj$y,zm=NA)
 
-#for (i in knots){
-#    w.pm100100 <- inla.mesh.project(wproj,w[w.st$w.group==which(i==knots)])
-#    grid[grid$length==i,]$zm <- as.vector(w.pm100100)  
-#}
+for (i in knots){
+    w.pm100100 <- inla.mesh.project(wproj,w[w.st$w.group==which(i==knots)])
+    grid[grid$length==i,]$zm <- as.vector(w.pm100100)  
+}
 ```
 
 Next we print the grid, which is now estimated at each knot. The observed counts for the length class at each knot are included in each panel. 
-```{r, eval=T, echo=T, dpi=600}
-#print(levelplot(zm ~ x * y |length,
-#          data = grid,
-#          scales = list(draw = TRUE),
-#          xlab = list("Easting", cex = 1),
-#          ylab = list("Northing", cex = 1),
-#          main = list("Posterior mean spatial random fields", cex = 1),
-#          col.regions=tim.colors(25, alpha = 1),
-#          panel=function(x, y, z, subscripts,...){
-#            panel.levelplot(x, y, z, subscripts,...)
-#            grid.points(x = cpue_subset[cpue_subset$LngtClass == #grid[subscripts[1],]$length,]$Xkm,
-#                        y = cpue_subset[cpue_subset$LngtClass == #grid[subscripts[1],]$length,]$Ykm, 
-#                        pch = 1,
-#                        size = unit(cpue_subset[cpue_subset$LngtClass #==grid[subscripts[1],]$length,]$NoPerHaul/15, "char"))  
-#          }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black'))
+```{r, eval=F, echo=T, dpi=600}
+print(levelplot(zm ~ x * y |length,
+          data = grid,
+          scales = list(draw = TRUE),
+          xlab = list("Easting", cex = 1),
+          ylab = list("Northing", cex = 1),
+          main = list("Posterior mean spatial random fields", cex = 1),
+          col.regions=tim.colors(25, alpha = 1),
+          panel=function(x, y, z, subscripts,...){
+            panel.levelplot(x, y, z, subscripts,...)
+            grid.points(x = cpue_subset[cpue_subset$LngtClass == grid[subscripts[1],]$length,]$Xkm,
+                        y = cpue_subset[cpue_subset$LngtClass == grid[subscripts[1],]$length,]$Ykm, 
+                        pch = 1,
+                        size = unit(cpue_subset[cpue_subset$LngtClass ==grid[subscripts[1],]$length,]$NoPerHaul/15, "char"))  
+          }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black'))
 ```
 
 
@@ -623,11 +622,10 @@ fsp <- parse(text=c("y ~ -1 + Intercept + ",
 ```
 
 ```{r, eval=FALSE, echo=T}
-#INLA:::inla.dynload.workaround() 
-#I3nb <- inla(eval(fsp), family = "nbinomial",
-#           data=inla.stack.data(Stack3),
-#           control.compute = list(dic = TRUE, waic = TRUE),
-#           control.predictor = list(A = inla.stack.A(Stack3)))
+I3nb <- inla(eval(fsp), family = "nbinomial",
+           data=inla.stack.data(Stack3),
+           control.compute = list(dic = TRUE, waic = TRUE),
+           control.predictor = list(A = inla.stack.A(Stack3)))
 ```
 
 ```{r, eval=FALSE, echo=T}
@@ -835,7 +833,6 @@ Note that in code below the names in the model matrix should not contain any spe
 ```{r, eval=T, echo=T}
 # 5. Make a stack. In this process we tell INLA at which points on the mesh we sampled the response variable and the covariates. 
 Xmatrix <- model.matrix(~ fYear + fSurvey +  surface,  data = cpue_subset)
-head(Xmatrix)
 ```
 
 This Xmatrix contains the model matrix with the fixed effects, including the intercept (The column for the intercept is named "(Intercept)", and it is 1 for all observations). However, in the next step the intercept is removed from the model matrix. The intercept is then included when making the stack, and named "Intercept" (without brackets).
@@ -855,6 +852,8 @@ Stack1 <- inla.stack(
        X=X, #Covariates
        w=w.st))                  #Spatial field
 ```
+
+Note that N is the number of rows (`r N`) in the data set, and thus equal to the first dimension of A1. 
 
 ## Making the model formula and running the INLA model
 
@@ -882,7 +881,7 @@ summary(I1p)
 summary(I1nb)
 ```
 
-
+We'll plot the spatial mean and sd, but this time with a grid size of 1 by 1 km. Because the sampling locations are on a km grid, we can first find the ranges of the x and y coordinates of the grid, and then have grid cells of size 1.
 ```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
 # we want to make cells of 1 by 1 km. Let's do this first 
 xl <- range(Loc[,1])
@@ -891,7 +890,6 @@ yl <-  range(Loc[,2])
 yres <- round(yl[2]-yl[1])
 
 wproj <- inla.mesh.projector(mesh1a, dims=c(xres,yres), xlim = xl, ylim = yl) 
-
 
 wm.pm100100  <- inla.mesh.project(wproj, I1nb$summary.random$w$mean)
 wsd.pm100100 <- inla.mesh.project(wproj, I1nb$summary.random$w$sd)
