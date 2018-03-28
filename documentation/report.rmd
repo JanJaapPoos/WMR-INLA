@@ -28,7 +28,6 @@ library(rgdal); library(rgeos);
 library(mapdata); library(maptools)
 ```
 
-
 ## The IBTS and BTS data
 
 We will use the BTS and IBTS data set. In this case we downloaded the data for starry ray. These dataset contains the CPUE per length per haul can be dowloaded from datras.ices.dk. 
@@ -92,13 +91,24 @@ full_cpue  <- merge(full_cpue,trawllist, all.x=T)
 
 The records that have lenghts equal to zero (that indicated zero hauls in our original set ) now need to be removed because we have all the information we need (these hauls now have zero catch for the full length range observed in the survey). 
 
-In addition, there are some observations that are highly unlikely: For instance there is a single observation of an individual of 100 cm (in 1977). This is suspicious, and we remove it from the data. Note that when the length information is included in the analyses a further selection is made for the lengths.
-
-
 ```{r, eval=TRUE, echo=TRUE}
 #now remove zero lengths
-full_cpue <- full_cpue[full_cpue$LngtClass> 0,]
-full_cpue <- full_cpue[full_cpue$LngtClass< 990,]
+full_cpue <- full_cpue[full_cpue$LngtClass > 0,]
+```
+
+In addition, there are some observations that are highly unlikely: For instance there is a single observation of an individual of 100 cm (in 1977). This is highly suspicious, becuse it is far larger than than any other observation, and likely due to species mis-identification. This can be seen in the histogram of length observations below:
+
+
+```{r, eval=TRUE, echo=TRUE, dpi=600}
+hist(full_cpue[full_cpue$NoPerHaul >0,]$LngtClass, breaks=100, xlab="Length (mm)", main="Histogram of observed lengths")
+abline(v=990, col="red")
+```
+
+We remove this observation from the data. Note that when the length information is included in the analyses a further selection is made for the lengths.
+
+```{r, eval=TRUE, echo=TRUE}
+#remove single unlikely large individual (of 1 m length) 
+full_cpue <- full_cpue[full_cpue$LngtClass < 990,]
 head(full_cpue)
 ```
 
@@ -137,13 +147,13 @@ par(mfrow=c(1,2))
 plot(cpue_subset$ShootLong,cpue_subset$ShootLat, 
      cex=0.1, 
      col=as.numeric(as.factor(cpue_subset$Survey)),
-     xlab="Longitude", ylab="Lattitude")
+     xlab="Longitude", ylab="Lattitude", main="Location of all hauls" )
 map("world",add=T)
 
 plot(cpue_subset$ShootLong,cpue_subset$ShootLat, 
      cex=(cpue_subset$NoPerHaul)/10, 
      col=as.numeric(as.factor(cpue_subset$Survey)),
-     xlab="Longitude", ylab="Lattitude")
+     xlab="Longitude", ylab="Lattitude",  main="Counts per hauls" )
 map("world",add=T)
 
 ```
@@ -152,10 +162,13 @@ Clearly the IBTS hauls cover a larger part of the North Sea, but the large catch
 We also plot a quick histogram of the counts, to give us an impression of the statistical distribution of the data.
 
 ```{r, eval=TRUE, echo=TRUE}
-hist(cpue_subset$NoPerHaul, 200, xlab= "Number per haul")
+par(mfrow=c(1,2))
+hist(cpue_subset[cpue_subset$Survey == "BTS",]$NoPerHaul, 200, xlab= "Number per haul", main="Histogram of counts per haul BTS")
+hist(cpue_subset[cpue_subset$Survey == "NSIBTS",]$NoPerHaul, 200, xlab= "Number per haul", main="Histogram of counts per haul IBTS")
+
 ```
 
-The count data is clearly quite skewed, with lots of zeros and small values, and very few large counts. Because of this distribution and because  these are counts, a Poisson and a negative binomial distribution will be used in the inla model lateron.  
+The count data is clearly quite skewed, with lots of zeros and small values, and very few large counts. Because of this distribution and because  these are counts, a Poisson and a negative binomial distribution will be used in the inla model.  
 
 ## Making a spatial mesh for the data
 
@@ -168,7 +181,7 @@ Next we need a mesh for the spatial data. Because we do not want our spatial cor
 
 ```{r, eval=TRUE, echo=TRUE}
 ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
-mesh1a    <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(100))
+mesh1a   <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(70))
 ```
 
 As an alternative to using the nonconvex hull function to generate a boundary,, we can also take the shapefile of the North Seaas the boundary of the mesh, which makes prediction in the future easier, as we know no record can be found outside the North Sea area (give or take evolution). We first load the ICES shapefiles which were downloaded from http://gis.ices.dk/sf/. We load this shapefiles, merge layers together, transform to UTM, convert UTM to km rather than meters and finally create a mesh. 
@@ -271,6 +284,7 @@ summary(I1p)
 
 summary(I1nb)
 ```
+Plot the histograms of observations and fits for both models 
 
 ```{r, eval=T, echo=T}
 
@@ -278,7 +292,12 @@ idx <- inla.stack.index(Stack1, tag= 'Fit')$data
 quantile(I1nb$summary.fitted.values[idx,"mean"])
 quantile(cpue_subset$NoPerHaul)
 
-hist(I1nb$summary.fitted.values[idx,"mean"],200, xlim=c(0,50))
+par(mfrow=c(1,2))
+hist(round(I1p$summary.fitted.values[idx,"mean"],0),300, xlim=c(0,50), ylim=c(0,4000), xlab="Counts", main="Histogram of observed versus predicted counts")
+obshist <- table(cpue_subset$NoPerHaul)
+points(x=names(obshist), y=c(obshist), pch=20)
+
+hist(round(I1nb$summary.fitted.values[idx,"mean"],0),200, xlim=c(0,50), ylim=c(0,4000), xlab="Counts", main="Histogram of observed versus predicted counts")
 obshist <- table(cpue_subset$NoPerHaul)
 points(x=names(obshist), y=c(obshist), pch=20)
 
