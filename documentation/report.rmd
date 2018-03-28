@@ -54,18 +54,17 @@ BTS  <- read.csv(file.path(path,"CPUE per length per Hour and Swept Area_2017-07
 
 BTS[is.na(BTS$LngtClass),]$NoPerHaul <- 0
 BTS[is.na(BTS$LngtClass),]$LngtClass <- 0
-
 ```
 
 The BTS swept area estimate is rounded, and thus not very useful. We recalculate it: the disatnce and beam width are in m, so the surface is in m2, and divided by 11e+06 to get km2
 ```{r, eval=TRUE, echo=TRUE}
-# there are some negative  distances. We make those  NA, and infer the surfaces for these later 
+# there are some negative distances. We make those  NA, and infer their surface later 
 BTS[!is.na(BTS$Distance) & BTS$Distance < 0,]$Distance <- NA
 
 #now calculate surface
 BTS$surface <- (BTS$Distance * BTS$BeamWidth)/1e+06
 
-# summary of the surface var tells us the number of NAs, and whether there are negative values
+# summary of the surface gives number of NAs, and whether there are negative values
 summary(BTS$surface)
 summary(BTS$HaulDur)
 
@@ -133,7 +132,6 @@ full_cpue$Ykm <- UTM[,2]/1000
 
 The INLA code does not like special characters in some of the variable names, like the hyphen in "NS-IBTS". Therefore we rename the survey to NSIBTS. 
 ```{r, eval=TRUE, echo=TRUE}
-#recode survey names so that there are no special characters
 full_cpue <- transform(full_cpue, Survey=gsub("-","",Survey))
 ```
 
@@ -141,7 +139,6 @@ full_cpue <- transform(full_cpue, Survey=gsub("-","",Survey))
 
 We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will subset the data, and start our analysis from a fiven year. That year is stored in startyr.    
 ```{r, eval=TRUE, echo=TRUE}
-# make selection of  fullset.
 startyr <- 2013
 cpue_subset <- full_cpue[full_cpue$Year >= startyr,]
 ```
@@ -166,7 +163,6 @@ plot(cpue_subset$ShootLong,cpue_subset$ShootLat,
      col=as.numeric(as.factor(cpue_subset$Survey)),
      xlab="Longitude", ylab="Lattitude",  main="Counts per hauls" )
 map("world",add=T)
-
 ```
 Clearly the IBTS hauls cover a larger part of the North Sea, but the large catches for both are located in the same areas. 
 
@@ -591,8 +587,6 @@ print(levelplot(zm ~ x * y |length,
           }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black'))
 ```
 
-
-
 ## Including length in the survey catchability
 
 ```{r, eval=T, echo=T}
@@ -629,13 +623,11 @@ I3nb <- inla(eval(fsp), family = "nbinomial",
 ```
 
 ```{r, eval=FALSE, echo=T}
-#summary(I3nb)
+summary(I3nb)
 ```
 
 ## Using swept area estimates
 We still have the IBTS data available in the cpue_IBTS object, but that does not provide the swept area. For this, we need to read in the HH records of the exchange file 
-
-
 
 File contains HH records in exchange files for IBTS. NA for door spread and distance are coded as -9, so make NAs of those. 
 ```{r, eval=T, echo=T}
@@ -659,7 +651,6 @@ plot(IBTSHH$WingSpread,IBTSHH$DoorSpread)
 
 Multiply  wing spread by distance, which is also in metres. The rsulting surface is thus in m2.
 ```{r, eval=T, echo=T}
-
 IBTSHH$surface <- (IBTSHH$Distance * IBTSHH$WingSpread)/1e+06
 ```
 
@@ -687,7 +678,6 @@ IBTS <- merge(IBTS, IBTSHH,by= "haulCode", all.x=T, all.y=F)
 
 Also infer missing surfaces from hauldur for BTS
 ```{r, eval=TRUE, echo=TRUE, dpi=600}
-
 plot(x=BTS$HaulDur,y=BTS$surface)
 linmod <- lm(surface~ -1 + HaulDur, data=BTS)
 summary(linmod)
@@ -696,19 +686,17 @@ abline(linmod)
 BTS[is.na(BTS$surface),]$surface <- as.numeric(predict(linmod,newdata=BTS))[is.na(BTS$surface)]
 ```
 
-
 Next we combine the two sets into one.
 ```{r, eval=TRUE, echo=TRUE}
 cols <- intersect(colnames(BTS), colnames(IBTS))
 cpue <- rbind(BTS[,cols],IBTS[,cols])
 ```
 
-
 Now that the IBTS and BTS data sets are combined we want to make a set where we have counts for all hauls and all lenghts. This means first making an dentifier for each unique haul (based on the information we have for all the hauls). This identifier is used to make a "trawllist" where all the information for the hauls is stored.
 
 Once the trawllist is make we use epand.grid() to make a combination of all hauls and lenght classes. This set is merged with our original data set.
 ```{r, eval=TRUE, echo=TRUE}
-trawllist <- cpue[!duplicated(cpue$haulCode),!names( cpue) %in% c("Species","AphiaID","NoPerHaul","Sex", "LngtClass")]
+trawllist <- cpue[!duplicated(cpue$haulCode),!names(cpue) %in% c("Species","AphiaID","NoPerHaul","Sex", "LngtClass")]
 
 #expand grid 
 haulsLengths <- expand.grid(haulCode=unique(cpue$haulCode),LngtClass=unique(cpue$LngtClass), stringsAsFactors = F)
@@ -731,7 +719,6 @@ In addition, there are some observations that are highly unlikely: For instance 
 ```{r, eval=TRUE, echo=TRUE}
 #now remove zero lengths
 full_cpue <- full_cpue[full_cpue$LngtClass> 0,]
-
 full_cpue <- full_cpue[full_cpue$LngtClass< 990,]
 ```
 
@@ -745,7 +732,6 @@ full_cpue$Ykm <- UTM[,2]/1000
 
 The INLA code does not like special characters in some of the variable names, like the hyphen in "NS-IBTS". Therefore we rename the survey to NSIBTS. 
 ```{r, eval=TRUE, echo=TRUE}
-#recode survey names so that there are no special characters
 full_cpue <- transform(full_cpue, Survey=gsub("-","",Survey))
 ```
 
@@ -753,7 +739,6 @@ full_cpue <- transform(full_cpue, Survey=gsub("-","",Survey))
 
 We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will subset the data, and start our analysis again from startyr `r startyr`.    
 ```{r, eval=TRUE, echo=TRUE}
-# make selection of  fullset.
 cpue_subset <- full_cpue[full_cpue$Year >= startyr,]
 ```
 
@@ -763,7 +748,7 @@ The earlier we start, the more information we will obtain from the analysis on t
 cpue_subset <- aggregate(NoPerHaul ~ haulCode + Survey +  Quarter + Ship + Gear + HaulNo + Year + HaulDur + surface + ShootLong + ShootLat +  Xkm + Ykm +  Depth, data= cpue_subset,FUN="sum")
 ```
 
-We do not plot the exploraory data aalaysis again.
+We do not plot the exploraory data analayses again.
 
 ## Making a spatial mesh for the data
 
@@ -774,34 +759,15 @@ Loc <- cbind(cpue_subset$Xkm , cpue_subset$Ykm )
 
 Next we need a mesh for the spatial data. Because we do not want our spatial correlations to pass landmasses (e.g. Denmark) we first make a nonconvex hull of the data points using inla.nonconvex.hull(). This convex hull is used as a boundary for making a 2d mesh. The generation of the actual mesh is done using inla.mesh.2d(). That function takes several arguments, incuding "cutoff" and "max.edge". These arguments specify how fine the final mesh will be. Finer meshes will be able to capture smaller scale spatial correlations, but require more comuting time in the inla model.
 
-```{r, eval=TRUE, echo=TRUE}
+```{r, eval=TRUE, echo=TRUE, dpi=600}
 ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
 mesh1a   <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(30))
-```
-
-As an alternative to using the nonconvex hull function to generate a boundary,, we can also take the shapefile of the North Seaas the boundary of the mesh, which makes prediction in the future easier, as we know no record can be found outside the North Sea area (give or take evolution). We first load the ICES shapefiles which were downloaded from http://gis.ices.dk/sf/. We load this shapefiles, merge layers together, transform to UTM, convert UTM to km rather than meters and finally create a mesh. 
-```{r, eval=TRUE, echo=TRUE}
-ICESareas <- readShapePoly(file.path(path,"ICES_Areas_20160601_dense"))
-NorthSea  <- subset(ICESareas,SubArea==4)
-NorthSea  <- gUnionCascaded(NorthSea)
-proj4string(NorthSea) <- c("+proj=longlat")
-NorthSeaUTM <- spTransform(NorthSea,CRS("+proj=utm +zone=31"))
-
-NS.border <- inla.sp2segment(NorthSeaUTM)
-NS.border$loc <- NS.border$loc/1000
-
-mesh1b      <- inla.mesh.2d(boundary=NS.border, cutoff=3,max.edge=c(30))
-```
-
-The meshes can be plotted using the plot() function on the mesh object. Once the mesh is plotted, the locations of the samples (stored in the Loc object) can be overlayed using points(). Below, the two meshes are plotted side-by-side.
-
-```{r, eval=TRUE, echo=TRUE, dpi=600}
-par(mfrow=c(1,2))
 plot(mesh1a)
 points(Loc, col = 1, pch = 16, cex = 0.3)
-plot(mesh1b)
-points(Loc, col = 1, pch = 16, cex = 0.3)
 ```
+
+The alternative from the first examples can of course also be used.
+The meshes can be plotted using the plot() function on the mesh object. Once the mesh is plotted, the locations of the samples (stored in the Loc object) can be overlayed using points(). Below, the two meshes are plotted side-by-side.
 
 ## Making the projector matrix and the spde 
 
@@ -943,19 +909,23 @@ Next we want to simulate 1000 realizations and integrate over surface (per year)
 To go from number to weiht we need alpha and beta from growth curve (for length in cm and resulting W is in kg )
 alpha=0.156650
 beta=2.190 ref is bedford et al. 1986
-```{r, eval=FALSE, echo=T}
+```{r, eval=T, echo=T}
 
 # Step 2: Simulate regression parameters We use the function inla.posterior.sample 
 # to simulate from the model. The output is stored in the Sim object.
 
-set.seed(12345)
+set.seed(1234)
 Sim <- inla.posterior.sample(n = 1, result = I1nb)
 
 names(Sim[[1]])
-head(Sim[[1]]$latent,15)
-tail(Sim[[1]]$latent,15)
 length(Sim[[1]]$latent)
+rownames(Sim[[1]]$latent)
+```
 
+Sim is thus an object that has ...
+
+
+```{r, eval=FALSE, echo=T}
 # This gives an object with 6742 rows for this specific data set and model. The first xxx 
 # rows are simulated values for eta = X * beta, where X is the matrix with covariates, and 
 # the last 7 rows are simulated regression parameters. The middle part contains the simulated spatial field w.
