@@ -55,7 +55,19 @@ BTS  <- read.csv(file.path(path,"CPUE per length per Hour and Swept Area_2017-07
 BTS[is.na(BTS$LngtClass),]$NoPerHaul <- 0
 BTS[is.na(BTS$LngtClass),]$LngtClass <- 0
 
-BTS$surface <- BTS$Distance * BTS$BeamWidth
+```
+
+The BTS swept area estimate is rounded, and thus not very useful. We recalculate it: the disatnce and beam width are in m, so the surface is in m2, and divided by 11e+06 to get km2
+```{r, eval=TRUE, echo=TRUE}
+# there are some negative  distances. We make those  NA, and infer the surfaces for these later 
+BTS[!is.na(BTS$Distance) & BTS$Distance < 0,]$Distance <- NA
+
+#now calculate surface
+BTS$surface <- (BTS$Distance * BTS$BeamWidth)/1e+06
+
+# summary of the surface var tells us the number of NAs, and whether there are negative values
+summary(BTS$surface)
+summary(BTS$HaulDur)
 
 #make haul code
 BTS <- within(BTS, haulCode <- paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
@@ -69,7 +81,6 @@ cpue <- rbind(BTS[,cols],IBTS[,cols])
 #remove CPUE per hour that we do not need now that we have counts
 cpue <- cpue[,!names(cpue)=="CPUE_number_per_hour"]
 ```
-
 
 Now that the IBTS and BTS data sets are combined we want to make a set where we have counts for all hauls and all lenghts. This means first making an dentifier for each unique haul (based on the information we have for all the hauls). This identifier is used to make a "trawllist" where all the information for the hauls is stored together with its unique identifier.
 
@@ -354,6 +365,8 @@ grid.arrange(p1,p2, ncol=2)
   
 ```
 
+Wat happens here?
+
 ```{r, eval=FALSE, echo=T}
 
 tcoo <- rbind(c(0.3, 0.3), c(0.5, 0.5), c(0.7, 0.7))
@@ -421,7 +434,8 @@ Below, we inspect the length range of observations. There are no individuals wit
 
 ```{r, eval=T, echo=T}
 aggregate(NoPerHaul~LngtClass, data=cpue_subset, FUN= "sum")
-cpue_subset <- cpue_subset[cpue_subset$LngtClass< 650,]
+cpue_subset <- cpue_subset[cpue_subset$LngtClass >   0,]
+cpue_subset <- cpue_subset[cpue_subset$LngtClass < 650,]
 ```
 
 
@@ -444,7 +458,7 @@ Next we need a mesh for the spatial data. Because we do not want our spatial cor
 ```{r, eval=TRUE, echo=TRUE}
 
 ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
-mesh2a    <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(100))
+mesh2a    <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(70))
 plot(mesh2a)
 points(Loc, col = 1, pch = 16, cex = 0.5)
 ```
@@ -466,7 +480,7 @@ Using the `r length(knots)` knots as locations, we make a 1 dimensional mesh.
 mesh.t <- inla.mesh.1d(loc = knots)
 ```
 
-In this mesh.t object, the dimensions can be checked using mesh.t$loc (for the locations) and mesh.t$n (the number of locations). The code below confirms that there are 5 locations, and those are at the values of the knots object. 
+In this mesh.t object, the dimensions can be checked using mesh.t$loc (for the locations) and mesh.t$n (the number of locations). The code below confirms that there are `r mesh.t$n` locations, and those are at the values of the knots object. 
 ```{r, eval=T, echo=T}
 mesh.t$n
 mesh.t$loc
@@ -559,7 +573,8 @@ grid <- expand.grid(length=knots, x = wproj$x, y = wproj$y,zm=NA)
 
 for (i in knots){
     w.pm100100 <- inla.mesh.project(wproj,w[w.st$w.group==which(i==knots)])
-    grid[grid$length==i,]$zm <- as.vector(w.pm100100)  }
+    grid[grid$length==i,]$zm <- as.vector(w.pm100100)  
+}
 ```
 
 Next we print the grid, which is now estimated at each knot. The observed counts for the length class at each knot are included in each panel. 
@@ -631,48 +646,60 @@ File contains HH records in exchange files for IBTS. NA for door spread and dist
 ```{r, eval=T, echo=T}
 IBTSHH <- read.csv(file.path(path,"Exchange Data_2017-07-14 09_26_25.csv"), stringsAsFactors = F)
 
-
 IBTSHH <- within(IBTSHH, haulCode <-  paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
 
 IBTSHH[IBTSHH$DoorSpread == -9,]$DoorSpread <- NA
 IBTSHH[IBTSHH$Distance == -9,]$Distance <- NA
-IBTSHH[IBTSHH$Netopening == -9,]$Netopening <- NA
+IBTSHH[IBTSHH$WingSpread == -9,]$WingSpread <- NA
+``` 
 
-IBTSHH$surface <- IBTSHH$Distance * IBTSHH$Netopening
+Plot  haul duration, doorspread and wingspread, haulduration is in minutes, wing spread and doorspread are in meters. 
+
+```{r, eval=T, echo=T}
+hist(IBTSHH$HaulDur,120, xlim=c(0,120))
+
+plot(IBTSHH$WingSpread,IBTSHH$DoorSpread)
+```
+
+Multiply  wing spread by distance, which is also in metres. The rsulting surface is thus in m2.
+```{r, eval=T, echo=T}
+
+IBTSHH$surface <- (IBTSHH$Distance * IBTSHH$WingSpread)/1e+06
 ```
 
 Select only relevant variables, and remove all hauls longer than 90 minutes
 ```{r, eval=T, echo=T}
-IBTSHH <- IBTSHH[names(IBTSHH) %in% c("haulCode", "surface", "HaulDur","Doorspread","Ditance","Netopening","Warplngt")]
+IBTSHH <- IBTSHH[names(IBTSHH) %in% c("haulCode", "surface", "HaulDur","Doorspread","Distance","WingSpread","Warplngt")]
 IBTSHH <- IBTSHH[IBTSHH$HaulDur<=90,]
 ```
 
-Plot surface against duration hoping to find corr
+Plot surface against duration hoping to find corr, use linear model to predict surface from haul duration, assuming model withuot intercept
 ```{r, eval=T, echo=T}
 plot(x=IBTSHH$HaulDur,y=IBTSHH$surface)
-summary(lm(surface~HaulDur, data=IBTSHH))
+linmod <- lm(surface~ -1 + HaulDur, data=IBTSHH)
+summary(linmod)
+abline(linmod)
+
+IBTSHH[is.na(IBTSHH$surface),]$surface <- as.numeric(predict(linmod,newdata=IBTSHH))[is.na(IBTSHH$surface)]
 ```
 
-
-Merge haulinfo to full cpue set
+Merge haulinfo to full cpue set, after removing haulduration from haul data (because we have it in the CPUE set already)
 ```{r, eval=T, echo=T}
-IBTS <- merge(IBTS, IBTSHH, all.x=T, all.y=F)
+IBTSHH$HaulDur <- NULL
+IBTS <- merge(IBTS, IBTSHH,by= "haulCode", all.x=T, all.y=F)
 ```
 
+Also infer missing surfaces from hauldur for BTS
+```{r, eval=T, echo=T}
 
+plot(x=BTS$HaulDur,y=BTS$surface)
+linmod <- lm(surface~ -1 + HaulDur, data=BTS)
+summary(linmod)
+abline(linmod)
 
-```{r, eval=TRUE, echo=TRUE}
-BTS  <- read.csv(file.path(path,"CPUE per length per Hour and Swept Area_2017-07-12 11_29_36.csv"), stringsAsFactors = F)
-
-BTS[is.na(BTS$LngtClass),]$NoPerHaul <- 0
-BTS[is.na(BTS$LngtClass),]$LngtClass <- 0
-
-BTS$surface <- BTS$Distance * BTS$BeamWidth
-
-#make haul code
-BTS <- within(BTS, haulCode <- paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
-
+BTS[is.na(BTS$surface),]$surface <- as.numeric(predict(linmod,newdata=BTS))[is.na(BTS$surface)]
 ```
+
 
 Next we combine the two sets into one.
 ```{r, eval=TRUE, echo=TRUE}
@@ -720,21 +747,193 @@ full_cpue$Xkm <- UTM[,1]/1000
 full_cpue$Ykm <- UTM[,2]/1000
 ```
 
-
 The INLA code does not like special characters in some of the variable names, like the hyphen in "NS-IBTS". Therefore we rename the survey to NSIBTS. 
 ```{r, eval=TRUE, echo=TRUE}
 #recode survey names so that there are no special characters
-full_cpue[full_cpue$Survey=="NS-IBTS",]$Survey <- "NSIBTS"
+full_cpue <- transform(full_cpue, Survey=gsub("-","",Survey))
 ```
 
+## Subsetting and length aggregation
 
+We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will subset the data, and start our analysis again from startyr `r startyr`.    
 ```{r, eval=TRUE, echo=TRUE}
 # make selection of  fullset.
 cpue_subset <- full_cpue[full_cpue$Year >= startyr,]
 ```
 
-Do actual INLA for counts per km2 :)
+The earlier we start, the more information we will obtain from the analysis on the annual changes in the count data. However, including more data also means we require more memory to store the model, and wait longer for the model to run. If too much data is used in the inla model, so that more computer memory is required than you have available, the model will crash. Now we have `r  nrow(cpue_subset)` rows left in cpue_subset. We start with a very simple analysis where we do not take length into account, and only analyse numbers per haul. Hence we aggregate the counts per haul. Because we now want to include the surface rather than the duration we include that in the aggregate.
 
+```{r, eval=TRUE, echo=TRUE}
+cpue_subset <- aggregate(NoPerHaul ~ haulCode + Survey +  Quarter + Ship + Gear + HaulNo + Year + HaulDur + surface + ShootLong + ShootLat +  Xkm + Ykm +  Depth, data= cpue_subset,FUN="sum")
+```
+
+We do not plot the exploraory data aalaysis again.
+
+## Making a spatial mesh for the data
+
+The UTM coordinates of the data set are combined into a Loc (location) dataset. That data set will be used later to generate spatial meshes for the data.   
+```{r, eval=TRUE, echo=TRUE}
+Loc <- cbind(cpue_subset$Xkm , cpue_subset$Ykm )
+```
+
+Next we need a mesh for the spatial data. Because we do not want our spatial correlations to pass landmasses (e.g. Denmark) we first make a nonconvex hull of the data points using inla.nonconvex.hull(). This convex hull is used as a boundary for making a 2d mesh. The generation of the actual mesh is done using inla.mesh.2d(). That function takes several arguments, incuding "cutoff" and "max.edge". These arguments specify how fine the final mesh will be. Finer meshes will be able to capture smaller scale spatial correlations, but require more comuting time in the inla model.
+
+```{r, eval=TRUE, echo=TRUE}
+ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
+mesh1a   <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(70))
+```
+
+As an alternative to using the nonconvex hull function to generate a boundary,, we can also take the shapefile of the North Seaas the boundary of the mesh, which makes prediction in the future easier, as we know no record can be found outside the North Sea area (give or take evolution). We first load the ICES shapefiles which were downloaded from http://gis.ices.dk/sf/. We load this shapefiles, merge layers together, transform to UTM, convert UTM to km rather than meters and finally create a mesh. 
+```{r, eval=TRUE, echo=TRUE}
+ICESareas <- readShapePoly(file.path(path,"ICES_Areas_20160601_dense"))
+NorthSea  <- subset(ICESareas,SubArea==4)
+NorthSea  <- gUnionCascaded(NorthSea)
+proj4string(NorthSea) <- c("+proj=longlat")
+NorthSeaUTM <- spTransform(NorthSea,CRS("+proj=utm +zone=31"))
+
+NS.border <- inla.sp2segment(NorthSeaUTM)
+NS.border$loc <- NS.border$loc/1000
+
+mesh1b      <- inla.mesh.2d(boundary=NS.border, cutoff=3,max.edge=c(30))
+```
+
+The meshes can be plotted using the plot() function on the mesh object. Once the mesh is plotted, the locations of the samples (stored in the Loc object) can be overlayed using points(). Below, the two meshes are plotted side-by-side.
+
+```{r, eval=TRUE, echo=TRUE, dpi=600}
+par(mfrow=c(1,2))
+plot(mesh1a)
+points(Loc, col = 1, pch = 16, cex = 0.3)
+plot(mesh1b)
+points(Loc, col = 1, pch = 16, cex = 0.3)
+```
+
+## Making the projector matrix and the spde 
+
+Once the 2d mesh is made we construct a observation/prediction weight matrix for the model. This is also called the "projector matrix".
+```{r, eval=TRUE, echo=TRUE}
+# 2. Define the weighting factors a_ik (also called the projector matrix).
+A1      <- inla.spde.make.A(mesh  = mesh1a, loc   = Loc)
+dim(A1)
+```
+The first dimension of the projector matrix has the size of the number of observations (here `r dim(A1)[1]`), and the second dimension of the projector matrix is the number of nodes in the mesh (here `r dim(A1)[2]`).
+```{r, eval=TRUE, echo=TRUE}
+# 3. Define the spde
+spde  <- inla.spde2.matern(mesh1a)
+
+w.st <- inla.spde.make.index('w', n.spde = spde$n.spde)
+```
+
+## Making the stack
+
+The stack allows INLA to build models with complex linear predictors. Here have a SPDE model combined with covariate fixed effects and an intercept at n hauls.
+
+Before making the stack we need to convert all fixed effects that are factors in the INLA model.
+```{r, eval=T, echo=T}
+cpue_subset$fYear   <- as.factor(cpue_subset$Year)
+cpue_subset$fSurvey <- as.factor(cpue_subset$Survey)
+```
+
+Note that in code below the names in the model matrix should not contain any special characters! This is why we renamed the "NS-IBTS" survey to "NSIBTS"
+```{r, eval=T, echo=T}
+# 5. Make a stack. In this process we tell INLA at which points on the mesh we sampled the response variable and the covariates. 
+Xmatrix <- model.matrix(~ fYear + fSurvey +  surface,  data = cpue_subset)
+head(Xmatrix)
+```
+
+This Xmatrix contains the model matrix with the fixed effects, including the intercept (The column for the intercept is named "(Intercept)", and it is 1 for all observations). However, in the next step the intercept is removed from the model matrix. The intercept is then included when making the stack, and named "Intercept" (without brackets).
+
+```{r, eval=T, echo=T}
+X <- as.data.frame(Xmatrix[,-1])
+names(X) <- c(gsub("[:]",".",names(X)))
+head(X)
+
+N <- nrow(cpue_subset)
+Stack1 <- inla.stack(
+    tag  = "Fit",
+    data = list(y = cpue_subset$NoPerHaul),    
+    A    = list(1,1, A1),                      
+    effects = list( 
+       Intercept=rep(1,N),
+       X=X, #Covariates
+       w=w.st))                  #Spatial field
+```
+
+## Making the model formula and running the INLA model
+
+The model formula used in the inla model is generated from the names of the model matrix, combined with the intercept term and the spatial correlation model ("f(w, model=spde)").
+
+Subsequently, two inla models are run, one assuming that the data are Poisson distributed, and another model assuming that the data are negative binomial distributed.
+
+```{r, eval=T, results='hide', echo=T, message=FALSE, warning=FALSE}
+fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde)"),collapse =" + ")))
+
+INLA:::inla.dynload.workaround() 
+I1p <- inla(eval(fsp), family = "poisson", data=inla.stack.data(Stack1),
+           control.compute = list(dic = TRUE, waic = TRUE),
+           control.predictor = list(A = inla.stack.A(Stack1)))
+
+I1nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
+           control.compute = list(dic = TRUE, waic = TRUE, config=TRUE),
+           control.predictor = list(A = inla.stack.A(Stack1)))
+```
+Once the INLA models are run, a summary can be printed for the two models. This summary contains much of the relevant information for the models.
+
+```{r, eval=T, echo=T}
+summary(I1p)
+
+summary(I1nb)
+```
+
+
+```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
+wproj <- inla.mesh.projector(mesh1a, xlim = range(Loc[,1]), ylim = range(Loc[,2])) 
+
+wm.pm100100  <- inla.mesh.project(wproj, I1nb$summary.random$w$mean)
+wsd.pm100100 <- inla.mesh.project(wproj, I1nb$summary.random$w$sd)
+    
+grid     <- expand.grid(x = wproj$x, y = wproj$y)
+grid$zm  <- as.vector(wm.pm100100)   
+grid$zsd <- as.vector(wsd.pm100100)   
+
+wld <- map('world', xlim=c(-5,15), ylim=c(47,62),plot=FALSE)
+wld <- data.frame(lon=wld$x, lat=wld$y)
+
+UTMmap <- project(cbind(wld$lon, wld$lat), "+proj=utm +zone=31U ellps=WGS84")
+UTMmapFinal <- data.frame("xm"  =UTMmap[,1]/1e3, "ym" = UTMmap[,2]/1e3)
+
+p1 <- levelplot(zm ~ x * y  ,
+          data = grid, 
+          scales = list(draw = TRUE),
+          xlab = list("Easting", cex = 1),
+          ylab = list("Northing", cex = 1),
+          main = list("Posterior mean spatial random fields", cex = 1),
+          col.regions=tim.colors(25, alpha = 1),
+          panel=function(x, y, z, subscripts,...){
+            panel.levelplot(x, y, z, subscripts,...)
+            grid.points(x = cpue_subset$Xkm,
+                        y = cpue_subset$Ykm, 
+                        pch = 1,
+                        size = unit(cpue_subset$NoPerHaul/15+0.1, "char"))  
+          }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
+
+p2 <- levelplot(zsd ~ x * y,
+          data = grid, 
+          scales = list(draw = TRUE),
+          xlab = list("Easting", cex = 1),
+          ylab = list("Northing", cex = 1),
+          main = list("Posterior sd spatial random fields", cex = 1),
+          col.regions=tim.colors(25, alpha = 1),
+          panel=function(x, y, z, subscripts,...){
+            panel.levelplot(x, y, z, subscripts,...)
+            grid.points(x = cpue_subset$Xkm,
+                        y = cpue_subset$Ykm, 
+                        pch = 1,
+                        size = unit(cpue_subset$NoPerHaul/15+0.1, "char"))  
+          }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
+
+grid.arrange(p1,p2, ncol=2)
+  
+```
 
 Next we want to simulate 1000 realizations and integrate over surface (per year) so that we get a population level estimate.  
 ```{r, eval=FALSE, echo=T}
@@ -754,14 +953,14 @@ Sim <- inla.posterior.sample(n = NSim, result = I1nb)
 
 # X matrix
 #Xm      <- model.matrix(~BreedingD.std + Rain.std, data = cpue_subset)
-Xm <- model.matrix(~  fYear + fSurvey +  HaulDur  ,  data = cpue_subset)
+Xm <- model.matrix(~  fYear + fSurvey +  surface  ,  data = cpue_subset)
 
 # Create space to store the information
 N    <- nrow(cpue_subset)
 Ysim <- matrix(nrow = N, ncol = NSim)
 mu.i <- matrix(nrow = N, ncol = NSim)
 Xm   <- as.matrix(Xm)
-Am   <- as.matrix(A3)
+Am   <- as.matrix(A1)
 
 # We are calculating a Fixed part (X * beta) and also the random part (A * w)
 for (i in 1: NSim){
