@@ -298,10 +298,7 @@ summary(I1nb)
 Plot the histograms of observations and fits for both models 
 
 ```{r, eval=T, echo=T}
-
 idx <- inla.stack.index(Stack1, tag= 'Fit')$data
-quantile(I1nb$summary.fitted.values[idx,"mean"])
-quantile(cpue_subset$NoPerHaul)
 
 par(mfrow=c(1,2))
 hist(round(I1p$summary.fitted.values[idx,"mean"],0),300, xlim=c(0,50), ylim=c(0,4000), xlab="Counts", main="Histogram of observed versus predicted counts")
@@ -458,7 +455,7 @@ Next we need a mesh for the spatial data. Because we do not want our spatial cor
 ```{r, eval=TRUE, echo=TRUE}
 
 ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
-mesh2a    <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(70))
+mesh2a    <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(30))
 plot(mesh2a)
 points(Loc, col = 1, pch = 16, cex = 0.5)
 ```
@@ -552,47 +549,47 @@ fsp <- parse(text=c("y ~ -1 + Intercept + ",
 
 ```{r, eval=T, echo=T}
 #INLA:::inla.dynload.workaround() 
-I2nb <- inla(eval(fsp), family = "nbinomial",
-           data=inla.stack.data(Stack2),
-           control.compute = list(dic = TRUE, waic = TRUE),
-           control.predictor = list(A = inla.stack.A(Stack2)))
+#I2nb <- inla(eval(fsp), family = "nbinomial",
+#           data=inla.stack.data(Stack2),
+#           control.compute = list(dic = TRUE, waic = TRUE),
+#           control.predictor = list(A = inla.stack.A(Stack2)))
 ```
 
 ```{r, eval=T, echo=T}
-summary(I2nb)
+#summary(I2nb)
 ```
 
 We still have The "UTMmap" object for creating the maps from the previous analysis.
 
 ```{r, eval=T, echo=T}
-w <- I2nb$summary.random$w$mean
+#w <- I2nb$summary.random$w$mean
 # length of w is mesh$n * NGroups
-wproj <- inla.mesh.projector(mesh2a, xlim = range(Loc[,1]), ylim = range(Loc[,2])) 
+#wproj <- inla.mesh.projector(mesh2a, xlim = range(Loc[,1]), ylim = range(Loc[,2])) 
 
-grid <- expand.grid(length=knots, x = wproj$x, y = wproj$y,zm=NA)
+#grid <- expand.grid(length=knots, x = wproj$x, y = wproj$y,zm=NA)
 
-for (i in knots){
-    w.pm100100 <- inla.mesh.project(wproj,w[w.st$w.group==which(i==knots)])
-    grid[grid$length==i,]$zm <- as.vector(w.pm100100)  
-}
+#for (i in knots){
+#    w.pm100100 <- inla.mesh.project(wproj,w[w.st$w.group==which(i==knots)])
+#    grid[grid$length==i,]$zm <- as.vector(w.pm100100)  
+#}
 ```
 
 Next we print the grid, which is now estimated at each knot. The observed counts for the length class at each knot are included in each panel. 
 ```{r, eval=T, echo=T, dpi=600}
-print(levelplot(zm ~ x * y |length,
-          data = grid,
-          scales = list(draw = TRUE),
-          xlab = list("Easting", cex = 1),
-          ylab = list("Northing", cex = 1),
-          main = list("Posterior mean spatial random fields", cex = 1),
-          col.regions=tim.colors(25, alpha = 1),
-          panel=function(x, y, z, subscripts,...){
-            panel.levelplot(x, y, z, subscripts,...)
-            grid.points(x = cpue_subset[cpue_subset$LngtClass == grid[subscripts[1],]$length,]$Xkm,
-                        y = cpue_subset[cpue_subset$LngtClass == grid[subscripts[1],]$length,]$Ykm, 
-                        pch = 1,
-                        size = unit(cpue_subset[cpue_subset$LngtClass ==grid[subscripts[1],]$length,]$NoPerHaul/15, "char"))  
-          }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black'))
+#print(levelplot(zm ~ x * y |length,
+#          data = grid,
+#          scales = list(draw = TRUE),
+#          xlab = list("Easting", cex = 1),
+#          ylab = list("Northing", cex = 1),
+#          main = list("Posterior mean spatial random fields", cex = 1),
+#          col.regions=tim.colors(25, alpha = 1),
+#          panel=function(x, y, z, subscripts,...){
+#            panel.levelplot(x, y, z, subscripts,...)
+#            grid.points(x = cpue_subset[cpue_subset$LngtClass == #grid[subscripts[1],]$length,]$Xkm,
+#                        y = cpue_subset[cpue_subset$LngtClass == #grid[subscripts[1],]$length,]$Ykm, 
+#                        pch = 1,
+#                        size = unit(cpue_subset[cpue_subset$LngtClass #==grid[subscripts[1],]$length,]$NoPerHaul/15, "char"))  
+#          }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black'))
 ```
 
 
@@ -627,14 +624,14 @@ fsp <- parse(text=c("y ~ -1 + Intercept + ",
 
 ```{r, eval=FALSE, echo=T}
 #INLA:::inla.dynload.workaround() 
-I3nb <- inla(eval(fsp), family = "nbinomial",
-           data=inla.stack.data(Stack3),
-           control.compute = list(dic = TRUE, waic = TRUE),
-           control.predictor = list(A = inla.stack.A(Stack3)))
+#I3nb <- inla(eval(fsp), family = "nbinomial",
+#           data=inla.stack.data(Stack3),
+#           control.compute = list(dic = TRUE, waic = TRUE),
+#           control.predictor = list(A = inla.stack.A(Stack3)))
 ```
 
 ```{r, eval=FALSE, echo=T}
-summary(I3nb)
+#summary(I3nb)
 ```
 
 ## Using swept area estimates
@@ -655,7 +652,8 @@ IBTSHH[IBTSHH$WingSpread == -9,]$WingSpread <- NA
 
 Plot  haul duration, doorspread and wingspread, haulduration is in minutes, wing spread and doorspread are in meters. 
 
-```{r, eval=T, echo=T}
+```{r, eval=TRUE, echo=TRUE, dpi=600}
+par(mfrow=c(1,2))
 hist(IBTSHH$HaulDur,120, xlim=c(0,120))
 
 plot(IBTSHH$WingSpread,IBTSHH$DoorSpread)
@@ -674,7 +672,7 @@ IBTSHH <- IBTSHH[IBTSHH$HaulDur<=90,]
 ```
 
 Plot surface against duration hoping to find corr, use linear model to predict surface from haul duration, assuming model withuot intercept
-```{r, eval=T, echo=T}
+```{r, eval=TRUE, echo=TRUE, dpi=600}
 plot(x=IBTSHH$HaulDur,y=IBTSHH$surface)
 linmod <- lm(surface~ -1 + HaulDur, data=IBTSHH)
 summary(linmod)
@@ -690,7 +688,7 @@ IBTS <- merge(IBTS, IBTSHH,by= "haulCode", all.x=T, all.y=F)
 ```
 
 Also infer missing surfaces from hauldur for BTS
-```{r, eval=T, echo=T}
+```{r, eval=TRUE, echo=TRUE, dpi=600}
 
 plot(x=BTS$HaulDur,y=BTS$surface)
 linmod <- lm(surface~ -1 + HaulDur, data=BTS)
