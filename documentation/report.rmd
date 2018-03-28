@@ -780,7 +780,7 @@ Next we need a mesh for the spatial data. Because we do not want our spatial cor
 
 ```{r, eval=TRUE, echo=TRUE}
 ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
-mesh1a   <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(70))
+mesh1a   <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(30))
 ```
 
 As an alternative to using the nonconvex hull function to generate a boundary,, we can also take the shapefile of the North Seaas the boundary of the mesh, which makes prediction in the future easier, as we know no record can be found outside the North Sea area (give or take evolution). We first load the ICES shapefiles which were downloaded from http://gis.ices.dk/sf/. We load this shapefiles, merge layers together, transform to UTM, convert UTM to km rather than meters and finally create a mesh. 
@@ -886,7 +886,14 @@ summary(I1nb)
 
 
 ```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
-wproj <- inla.mesh.projector(mesh1a, xlim = range(Loc[,1]), ylim = range(Loc[,2])) 
+# we want to make cells of 1 by 1 km. Let's do this first 
+xl <- range(Loc[,1])
+xres <- round(xl[2]-xl[1])
+yl <-  range(Loc[,2])
+yres <- round(yl[2]-yl[1])
+
+wproj <- inla.mesh.projector(mesh1a, dims=c(xres,yres), xlim = xl, ylim = yl) 
+
 
 wm.pm100100  <- inla.mesh.project(wproj, I1nb$summary.random$w$mean)
 wsd.pm100100 <- inla.mesh.project(wproj, I1nb$summary.random$w$sd)
@@ -936,7 +943,196 @@ grid.arrange(p1,p2, ncol=2)
 ```
 
 Next we want to simulate 1000 realizations and integrate over surface (per year) so that we get a population level estimate.  
+
+To go from number to weiht we need alpha and beta from growth curve (for length in cm and resulting W is in kg )
+alpha=0.156650
+beta=2.190 ref is bedford et al. 1986
 ```{r, eval=FALSE, echo=T}
+
+# Step 2: Simulate regression parameters We use the function inla.posterior.sample 
+# to simulate from the model. The output is stored in the Sim object.
+
+set.seed(12345)
+Sim <- inla.posterior.sample(n = 1, result = I1nb)
+
+names(Sim[[1]])
+head(Sim[[1]]$latent,15)
+tail(Sim[[1]]$latent,15)
+length(Sim[[1]]$latent)
+
+# This gives an object with 6742 rows for this specific data set and model. The first xxx 
+# rows are simulated values for eta = X * beta, where X is the matrix with covariates, and 
+# the last 7 rows are simulated regression parameters. The middle part contains the simulated spatial field w.
+# This is just one set of simulated values (due to n = 1 in the function above). 
+
+# Here is some fancy code to graph the last 8 values
+MyParams <- c("Intercept", "fYear2014", "fYear2015", "fYear2016","fYear2017", 
+              "fSurveyNSIBTS", "surface")
+rownum <- as.numeric(lapply(MyParams, 
+              function(x) 
+              grep(x, rownames(Sim[[1]]$latent), fixed = TRUE) 
+              ))
+rownum
+Sim[[1]]$latent[rownum]
+
+# Step 3: Calculate predicted values
+# It is identical to the Turco parasite example, except
+# there is now also the A * w component.
+# note that these are the rownames of sim[[1]]$latent that start with "w:"
+# This should be written more elegantly 
+
+Betas <- Sim[[1]]$latent[as.numeric(rownum)]
+wk    <- Sim[[1]]$latent[6239:(rownum[1]-1)]
+
+Amatrix <- as.matrix(A1)
+
+FixedPart   <- Xmatrix %*% Betas
+SpatialPart <- Amatrix %*% wk
+mu          <- exp(FixedPart + SpatialPart)
+Ysim        <- rpois(n = nrow(LP), lambda = mu)
+table(Ysim)
+
+par(mfrow = c(1,1), mar = c(5,5,2,2), cex.lab = 1.5)
+plot(table(Ysim),
+     xlab = "Simulated endemic richness values",
+     ylab = "Frequencies")
+
+
+# This is just one simulated data set.
+# Repeat the whole thing 1000 times.
+NSim <- 1000
+SimData <- inla.posterior.sample(n = NSim, result = I3)
+N  <- nrow(LP)
+Ysim <- matrix(nrow = N, ncol = NSim)
+mu.i <- matrix(nrow = N, ncol = NSim)
+
+Xm <- as.matrix(X)
+Am <- as.matrix(A2)
+rownames(SimData[[1]]$latent)[2442:3633]
+
+for (i in 1: NSim){
+  Betas <- SimData[[i]]$latent[as.numeric(rownum)]
+  wk    <- SimData[[i]]$latent[2442:3633]
+  FixedPart   <- Xm %*% Betas
+  SpatialPart <- Am %*% wk
+  mu.i[,i]    <- exp(FixedPart + SpatialPart)
+  Ysim[,i]    <- rpois(n = nrow(LP), lambda = mu.i[,i])
+}
+table(Ysim[,1])
+table(Ysim[,2])
+table(Ysim[,3])
+
+# Don't try to understand all the fancy code below Just the principle is enough.
+
+# RUN FROM HERE.....
+Z <- matrix(nrow = max(Ysim)+1, ncol = NSim)
+for (i in 1: NSim){
+	zi <- table(Ysim[,i])
+	I <- as.numeric(names(zi)) + 1
+	Z[I,i] <- zi
+}
+
+par(mfrow = c(1,1), mar = c(5,5,2,2), cex.lab = 1.5)
+Z[is.na(Z)] <- 0
+Xi <- 0: max(Ysim)
+AverageTable <- rowSums(Z) / NSim
+
+AverageTable <- rowSums(Z) / NSim
+apply(Z, 1, mean)
+SD <- apply(Z, 1, sd)
+
+Zs <- table(LP$nSIE)
+nx <- length(Zs)
+NamesZ <- as.numeric(names(Zs))
+
+plot(x = Xi, y = AverageTable, type = "h", lwd = 5, xlab = "Simulated endemic richness values", ylab = "Frequencies", ylim = c(0, 250))
+		
+# Add SDs
+for (i in 1:nx){
+    segments(x0 = NamesZ[i], x1 = NamesZ[i], y0 = AverageTable[i], y1 = AverageTable[i] + SD[i],lwd = 15,col = 1)
+}
+		
+#And add the table for the observed data
+for (i in 1:nx){
+    segments(x0 = NamesZ[i] + 0.2, x1 = NamesZ[i] + 0.2, y0 = 0, y1 = Zs[i],	lwd = 2,	col = 2)
+}
+
+# The red bars represent the frequency table for the observed data. The black lines is
+# the average frequency table for the 1000 simulated data sets. They should hopefully 
+# match. If they do then the model simulates data that is comparable to the observed data.		
+
+# It is not perfect. We are predicting too many zeros, but not enough ones and twos.
+		
+#############################################
+# Now that we have 1000 simulated data sets from the model, what else shall we do with these simulated 
+# data sets?
+
+# We could calculate the number of zeros in each of the 1,000 data sets.
+zeros <- vector(length = NSim)
+for(i in 1:NSim){
+	zeros[i] <- sum(Ysim[,i] == 0)
+}
+
+table(zeros)
+
+# From the 1,000 simulated data sets, in 2 simulated data sets we had 1141 zeros. In 2 simulated data sets
+# we had 1148 zeros,etc...... Your results will be different as mine.
+
+# Just type 
+Ysim[,1]
+Ysim[,2]
+Ysim[,3]
+#etc
+
+#Let's plot this as a table
+plot(table(zeros), 
+     #axes = FALSE,
+     xlab = "How often do we have 0, 1, 2, 3, etc. number of zeros",
+     ylab = "Number of zeros in 1000 simulated data sets",
+     xlim = c(50, 150),
+     main = "Simulation results")
+points(x = sum(LP$nSIE == 0), y = 0, pch = 16, cex = 5, col = 2)
+# The red dot is the number of zeros in the original data set.
+# The data simulated from the Poisson model contains to many zeros.
+#########################################
+
+#########################################
+# What else can we do with the 1,000 simulated data sets? We can also calculate the dispersion statistic for each
+# simulated data set
+
+p <- length(Betas) + 2    #Number of regression parameters
+Dispersion <- vector(length = NSim) #Create space
+
+# Calculate the dispersion for each simulated data set
+for(i in 1:NSim){
+	e2 <- (Ysim[,i] - mu2) /sqrt(mu2)
+	Dispersion[i] <- sum(e2^2) / (N - p)
+}
+
+# Plot this as a table
+hist(Dispersion,
+     xlab = "Dispersion",
+     ylab = "Frequency",
+     xlim = c(0.6, 1.5),
+     breaks = 25)
+
+# And visualize the dispersion for the original Poisson GLMM
+points(x = Dispersion2, 
+       y = 0, 
+       pch = 16, 
+       cex = 3, 
+       col = 2)
+# The red dot is the underdispersion in the original data set.
+# We have serious underdispersion!
+# Bugger.
+
+# A Generalized Poisson model may work.
+#
+```
+
+
+```{r, eval=FALSE, echo=T}
+
 # Simulate from model I1nb
 
 # Simulation study spatial Negbin model.
