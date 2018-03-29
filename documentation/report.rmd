@@ -915,66 +915,67 @@ beta=2.190 ref is bedford et al. 1986
 # to simulate from the model. The output is stored in the Sim object.
 
 set.seed(1234)
-Sim <- inla.posterior.sample(n = 1, result = I1nb)
+NSim <- 10
+Sim <- inla.posterior.sample(n = NSim, result = I1nb)
 
 names(Sim[[1]])
 length(Sim[[1]]$latent)
-rownames(Sim[[1]]$latent)
+#get out names of different types of rows in latent
+rnames <- rownames(Sim[[1]]$latent)
+rtypes <- unique(unlist(lapply(strsplit(rnames,":"),function(x){x[1]})))
+rtypes
+
+rtypes[1]
+length(grep(paste0("^",rtypes[1]),rownames(Sim[[1]]$latent)) )
+
+rtypes[2]
+length(grep(paste0("^",rtypes[2]),rownames(Sim[[1]]$latent)) )
+
+rtypes[3]
+wrownum <- grep(paste0("^",rtypes[3]),rownames(Sim[[1]]$latent))
+length(wrownum )
+
+wmat <- sapply(Sim, function(x) {x$latent[wrownum]})
+dim(wmat)
+apply(wmat,1,"mean")
+
+MyParams <- c("Intercept", "fYear2014", "fYear2015", "fYear2016","fYear2017", "fSurveyNSIBTS", "surface")
+lrownum <- unlist(lapply(MyParams, function(x) {grep(x, rownames(Sim[[1]]$latent), fixed = TRUE)}    ))
+lrownum
+Sim[[1]]$latent[rownum]
+
+linmat <- sapply(Sim, function(x) {x$latent[lrownum]})
+
+
 ```
 
 Sim is thus an object that has ...
 
 
 ```{r, eval=FALSE, echo=T}
-# This gives an object with 6742 rows for this specific data set and model. The first xxx 
-# rows are simulated values for eta = X * beta, where X is the matrix with covariates, and 
-# the last 7 rows are simulated regression parameters. The middle part contains the simulated spatial field w.
-# This is just one set of simulated values (due to n = 1 in the function above). 
-
-# Here is some fancy code to graph the last 8 values
-MyParams <- c("Intercept", "fYear2014", "fYear2015", "fYear2016","fYear2017", 
-              "fSurveyNSIBTS", "surface")
-rownum <- as.numeric(lapply(MyParams, 
-              function(x) 
-              grep(x, rownames(Sim[[1]]$latent), fixed = TRUE) 
-              ))
-rownum
-Sim[[1]]$latent[rownum]
-
-# Step 3: Calculate predicted values
-# It is identical to the Turco parasite example, except
-# there is now also the A * w component.
-# note that these are the rownames of sim[[1]]$latent that start with "w:"
-# This should be written more elegantly 
-
-Betas <- Sim[[1]]$latent[as.numeric(rownum)]
-wk    <- Sim[[1]]$latent[6239:(rownum[1]-1)]
-
-Amatrix <- as.matrix(A1)
-
-FixedPart   <- Xmatrix %*% Betas
-SpatialPart <- Amatrix %*% wk
-mu          <- exp(FixedPart + SpatialPart)
-Ysim        <- rpois(n = nrow(LP), lambda = mu)
-table(Ysim)
-
-par(mfrow = c(1,1), mar = c(5,5,2,2), cex.lab = 1.5)
-plot(table(Ysim),
-     xlab = "Simulated endemic richness values",
-     ylab = "Frequencies")
 
 
-# This is just one simulated data set.
-# Repeat the whole thing 1000 times.
-NSim <- 1000
-SimData <- inla.posterior.sample(n = NSim, result = I3)
-N  <- nrow(LP)
-Ysim <- matrix(nrow = N, ncol = NSim)
-mu.i <- matrix(nrow = N, ncol = NSim)
+#NOTE THAT WE SHOULD THINK ABOUT how distance works in model because of log link
 
-Xm <- as.matrix(X)
-Am <- as.matrix(A2)
-rownames(SimData[[1]]$latent)[2442:3633]
+#NOTE THAT YEARS DO NOT WORK YET HERE (NEED MORE WORK ON fixed effects)
+
+numbers <- matrix(NA, ncol=5, nrow=NSim, dimnames=list("sim"=1:NSim,"year"=startyr:2017))
+
+for (ii in startyr:2017){
+  for (jj in 1:NSim){
+            #intercept    (1 times beta for distance)
+    lin <- linmat[1,jj] + 1 * linmat[7,jj]
+    
+    wm.pm100100  <- inla.mesh.project(wproj, wmat[,jj])
+    
+    res <- exp(lin + wm.pm100100 )
+    numbers[jj,as.character(ii)] <- sum(res,na.rm=T)
+    
+  }
+}
+
+
+
 
 for (i in 1: NSim){
   Betas <- SimData[[i]]$latent[as.numeric(rownum)]
