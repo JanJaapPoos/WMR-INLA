@@ -56,7 +56,7 @@ BTS[is.na(BTS$LngtClass),]$NoPerHaul <- 0
 BTS[is.na(BTS$LngtClass),]$LngtClass <- 0
 ```
 
-The BTS swept area estimate is rounded, and thus not very useful. We recalculate it: the disatnce and beam width are in m, so the surface is in m2, and divided by 11e+06 to get km2
+The BTS swept area estimate is rounded, and thus not very useful. We recalculate it: the disatnce and beam width are in m, so the surface is in m2, and divided by 1e+06 to get km2
 ```{r, eval=TRUE, echo=TRUE}
 # there are some negative distances. We make those  NA, and infer their surface later 
 BTS[!is.na(BTS$Distance) & BTS$Distance < 0,]$Distance <- NA
@@ -88,9 +88,9 @@ Once the trawllist is make we use expand.grid() to make a combination of all hau
 trawllist <- cpue[!duplicated(cpue$haulCode),!names(cpue) %in% c("Species","AphiaID","NoPerHaul","Sex", "LngtClass")]
 
 #expand grid 
-haulsLengths <- expand.grid(haulCode=unique(cpue$haulCode),LngtClass=unique(cpue$LngtClass), stringsAsFactors = F)
-full_cpue <- merge(haulsLengths,cpue[names(cpue) %in% c("haulCode", "LngtClass","NoPerHaul")], all.x=T)
-rm(haulsLengths)
+hxl <- expand.grid(haulCode=unique(cpue$haulCode),LngtClass=unique(cpue$LngtClass), stringsAsFactors = F)
+full_cpue <- merge(hxl,cpue[names(cpue) %in% c("haulCode", "LngtClass","NoPerHaul")], all.x=T)
+rm(hxl)
 ```
 
 After we merged all possible combinations with the data we now have NAs for those lengts and hauls where the catch is zero, and so we set those to zero. This data is subsequently merged to the trawllist so that we have all information together. 
@@ -432,12 +432,12 @@ cpue_subset <- cpue_subset[cpue_subset$LngtClass < 650,]
 ```
 
 
-Because we now have combinations for all hauls and several length classes, the subset of data (since 2009) is still very big. It has`r  nrow(cpue_subset)` observations. In order to reduce the number of observaions used in the INLA model, we take all non-zero observations but we subsample the zero observations. The remaining zero observations willneed to receive a higher weight in the final model. Note that this is not yet implemented.  
-```{r, eval=TRUE, echo=TRUE}
-#cpue_subset_temp  <- cpue_subset[cpue_subset$NoPerHaul > 0,]
-#cpue_subset_temp  <-rbind(cpue_subset_temp, cpue_subset[sample(which(cpue_subset$NoPerHaul==0),40000),])
+Because we now have combinations for all hauls and several length classes, the subset of data (since 2009) is still very big. It has`r  nrow(cpue_subset)` observations. In order to reduce the number of observations used in the INLA model, we take all non-zero observations but we subsample the zero observations. The remaining zero observations willneed to receive a higher weight in the final model. Note that this is not yet implemented.  
+```{r, eval=F, echo=TRUE}
+cpue_subset_temp  <- cpue_subset[cpue_subset$NoPerHaul > 0,]
+cpue_subset_temp  <-rbind(cpue_subset_temp, cpue_subset[sample(which(cpue_subset$NoPerHaul==0),40000),])
 
-#cpue_subset <- cpue_subset_temp
+cpue_subset <- cpue_subset_temp
 ```
 
 
@@ -627,9 +627,7 @@ summary(I3nb)
 ```
 
 ## Using swept area estimates
-We still have the IBTS data available in the cpue_IBTS object, but that does not provide the swept area. For this, we need to read in the HH records of the exchange file 
-
-File contains HH records in exchange files for IBTS. NA for door spread and distance are coded as -9, so make NAs of those. 
+We still have the IBTS data available in the cpue_IBTS object, but that does not provide the swept area. For this, we need to read in the HH records of the IBTS. These HH records are available in the IBTS exchange files. The swept areas can be calculated from the travelled distance and the door spread or wing spread. Missing values for thease variables are coded as -9. In the r code those are made into NAs. 
 ```{r, eval=T, echo=T}
 IBTSHH <- read.csv(file.path(path,"Exchange Data_2017-07-14 09_26_25.csv"), stringsAsFactors = F)
 
@@ -640,48 +638,54 @@ IBTSHH[IBTSHH$Distance == -9,]$Distance <- NA
 IBTSHH[IBTSHH$WingSpread == -9,]$WingSpread <- NA
 ``` 
 
-Plot  haul duration, doorspread and wingspread, haulduration is in minutes, wing spread and doorspread are in meters. 
+Next, we plot a histogram of haul duration, and a scatterplot of doorspread versus wingspread to get a look at the data. Clearly, haul duration is stored in minutes, with most of the hausl being either 30 minutes or 1 hour. Hauls longer than 90 minute are removed. This step removes 'r sum(IBTSHH$HaulDur > 90)' from the `r nrow(IBTSSHH)' hauls.
+
+The wing spread and doorspread are stored in meters, with wing spreads being in the range `r range(IBTSHH$WingSpread, na.rm=T)` meters, and doorspread being in the range  `r range(IBTSHH$DoorSpread, na.rm=T)` meters. There is one clear outlier 
 
 ```{r, eval=TRUE, echo=TRUE, dpi=600}
 par(mfrow=c(1,2))
 hist(IBTSHH$HaulDur,120, xlim=c(0,120))
-
+abline(v=90, lty=2)
+IBTSHH <- IBTSHH[IBTSHH$HaulDur <= 90,]
 plot(IBTSHH$WingSpread,IBTSHH$DoorSpread)
+abline(a=0,b=1, lty=2)
 ```
 
-Multiply  wing spread by distance, which is also in metres. The rsulting surface is thus in m2.
+A surface is calculated by multiplying  wing spread by distance. Both are in metres. The resulting surface is thus in m2. This is converted to km2 by dividing by 1e+06.
 ```{r, eval=T, echo=T}
 IBTSHH$surface <- (IBTSHH$Distance * IBTSHH$WingSpread)/1e+06
 ```
 
-Select only relevant variables, and remove all hauls longer than 90 minutes
+NExt, only the relevant variables are selected, and all hauls longer than 90 minutes removed from the data set.
 ```{r, eval=T, echo=T}
-IBTSHH <- IBTSHH[names(IBTSHH) %in% c("haulCode", "surface", "HaulDur","Doorspread","Distance","WingSpread","Warplngt")]
-IBTSHH <- IBTSHH[IBTSHH$HaulDur<=90,]
+IBTSHH <- IBTSHH[names(IBTSHH) %in% c("haulCode", "surface", "HaulDur","Doorspread","Distance","WingSpread")]
 ```
 
-Plot surface against duration hoping to find corr, use linear model to predict surface from haul duration, assuming model withuot intercept
+Ploting the surface against haul duration and using a simple linear model (without intercept) we hope to find a relationship. 
 ```{r, eval=TRUE, echo=TRUE, dpi=600}
-plot(x=IBTSHH$HaulDur,y=IBTSHH$surface)
+plot(x=IBTSHH$HaulDur,y=IBTSHH$surface, pch=20)
 linmod <- lm(surface~ -1 + HaulDur, data=IBTSHH)
 summary(linmod)
-abline(linmod)
+abline(linmod, lty=2)
+```
 
+Indeed, there is a good relationship, where each minute of haul duration adds `coef(linmod)` km2 haul surface. This relationship is used to calculate the surface of hauls where only haul duration is known.   
+```{r, eval=TRUE, echo=TRUE, dpi=600}
 IBTSHH[is.na(IBTSHH$surface),]$surface <- as.numeric(predict(linmod,newdata=IBTSHH))[is.na(IBTSHH$surface)]
 ```
 
-Merge haulinfo to full cpue set, after removing haulduration from haul data (because we have it in the CPUE set already)
+Merge the haul information to the full cpue set, after removing haulduration from the  haul data (because we have it in the CPUE set already)
 ```{r, eval=T, echo=T}
 IBTSHH$HaulDur <- NULL
 IBTS <- merge(IBTS, IBTSHH,by= "haulCode", all.x=T, all.y=F)
 ```
 
-Also infer missing surfaces from hauldur for BTS
+We use the same procedure of inferring haul surface from haul duration for the missing surfaces of the BTS.
 ```{r, eval=TRUE, echo=TRUE, dpi=600}
-plot(x=BTS$HaulDur,y=BTS$surface)
+plot(x=BTS$HaulDur,y=BTS$surface, pch=20)
 linmod <- lm(surface~ -1 + HaulDur, data=BTS)
 summary(linmod)
-abline(linmod)
+abline(linmod, lty=2)
 
 BTS[is.na(BTS$surface),]$surface <- as.numeric(predict(linmod,newdata=BTS))[is.na(BTS$surface)]
 ```
@@ -699,10 +703,9 @@ Once the trawllist is make we use epand.grid() to make a combination of all haul
 trawllist <- cpue[!duplicated(cpue$haulCode),!names(cpue) %in% c("Species","AphiaID","NoPerHaul","Sex", "LngtClass")]
 
 #expand grid 
-haulsLengths <- expand.grid(haulCode=unique(cpue$haulCode),LngtClass=unique(cpue$LngtClass), stringsAsFactors = F)
-full_cpue <- merge(haulsLengths,cpue[names(cpue) %in% c("haulCode", "LngtClass","NoPerHaul")], all.x=T)
-rm(haulsLengths)
-head(full_cpue)
+hxl <- expand.grid(haulCode=unique(cpue$haulCode),LngtClass=unique(cpue$LngtClass), stringsAsFactors = F)
+full_cpue <- merge(hxl,cpue[names(cpue) %in% c("haulCode", "LngtClass","NoPerHaul")], all.x=T)
+rm(hxl)
 ```
 
 After we merged all possible combinations with the data we now have NAs for those lengts and hauls where the catch is zero, and so we set those to zero. This data is subsequently merged to the trawllist so that we now have all information together. 
@@ -713,7 +716,7 @@ full_cpue  <- merge(full_cpue,trawllist, all.x=T)
 
 The records that have lenghts equal to zero (that indicated zero hauls in our original set ) now need to be removed because we have all the information we need (these hauls now have zero catch for the full length range observed in the survey). 
 
-In addition, there are some observations that are highly unlikely: For instance there is a single observation of an individual of 100 cm (in 1977). This is suspicious, and we remove it from the data. 
+In addition, there are some observations that are highly unlikely: For instance there is a single observation of an individual of 100 cm (in 1977, see one of the sections above). This is suspicious, and we remove it from the data. 
 
 
 ```{r, eval=TRUE, echo=TRUE}
@@ -737,7 +740,7 @@ full_cpue <- transform(full_cpue, Survey=gsub("-","",Survey))
 
 ## Subsetting and length aggregation
 
-We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will subset the data, and start our analysis again from startyr `r startyr`.    
+We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will again start from startyr `r startyr`.    
 ```{r, eval=TRUE, echo=TRUE}
 cpue_subset <- full_cpue[full_cpue$Year >= startyr,]
 ```
@@ -748,18 +751,19 @@ The earlier we start, the more information we will obtain from the analysis on t
 cpue_subset <- aggregate(NoPerHaul ~ haulCode + Survey +  Quarter + Ship + Gear + HaulNo + Year + HaulDur + surface + ShootLong + ShootLat +  Xkm + Ykm +  Depth, data= cpue_subset,FUN="sum")
 ```
 
-We do not plot the exploraory data analayses again.
+We do not plot the exploratory data analayses again. As a reminder of the size of the dataset: the lenght aggregation has reduced it to `r  nrow(cpue_subset)` rows. This is the number of unique hauls in our data, which now spans years `r cpue_subset$Year`.
 
 ## Making a spatial mesh for the data
 
 The UTM coordinates of the data set are combined into a Loc (location) dataset. That data set will be used later to generate spatial meshes for the data.   
 ```{r, eval=TRUE, echo=TRUE}
-Loc <- cbind(cpue_subset$Xkm , cpue_subset$Ykm )
+Loc <- cbind(cpue_subset$Xkm, cpue_subset$Ykm )
 ```
 
 Next we need a mesh for the spatial data. Because we do not want our spatial correlations to pass landmasses (e.g. Denmark) we first make a nonconvex hull of the data points using inla.nonconvex.hull(). This convex hull is used as a boundary for making a 2d mesh. The generation of the actual mesh is done using inla.mesh.2d(). That function takes several arguments, incuding "cutoff" and "max.edge". These arguments specify how fine the final mesh will be. Finer meshes will be able to capture smaller scale spatial correlations, but require more comuting time in the inla model.
 
 ```{r, eval=TRUE, echo=TRUE, dpi=600}
+par(mfrow=c(1,1))
 ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
 mesh1a   <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(30))
 plot(mesh1a)
@@ -767,7 +771,6 @@ points(Loc, col = 1, pch = 16, cex = 0.3)
 ```
 
 The alternative from the first examples can of course also be used.
-The meshes can be plotted using the plot() function on the mesh object. Once the mesh is plotted, the locations of the samples (stored in the Loc object) can be overlayed using points(). Below, the two meshes are plotted side-by-side.
 
 ## Making the projector matrix and the spde 
 
@@ -795,10 +798,16 @@ cpue_subset$fYear   <- as.factor(cpue_subset$Year)
 cpue_subset$fSurvey <- as.factor(cpue_subset$Survey)
 ```
 
+Because of the link function of the Poisson and negative binomial that we will be using we need to log-transform the surfaces to get a linear response later 
+
+```{r, eval=T, echo=T}
+cpue_subset$lsurface   <- log(cpue_subset$surface)
+```
+
 Note that in code below the names in the model matrix should not contain any special characters! This is why we renamed the "NS-IBTS" survey to "NSIBTS"
 ```{r, eval=T, echo=T}
 # 5. Make a stack. In this process we tell INLA at which points on the mesh we sampled the response variable and the covariates. 
-Xmatrix <- model.matrix(~ fYear + fSurvey +  surface,  data = cpue_subset)
+Xmatrix <- model.matrix(~ fYear + fSurvey +  lsurface,  data = cpue_subset)
 ```
 
 This Xmatrix contains the model matrix with the fixed effects, including the intercept (The column for the intercept is named "(Intercept)", and it is 1 for all observations). However, in the next step the intercept is removed from the model matrix. The intercept is then included when making the stack, and named "Intercept" (without brackets).
@@ -882,7 +891,7 @@ p1 <- levelplot(zm ~ x * y  ,
             grid.points(x = cpue_subset$Xkm,
                         y = cpue_subset$Ykm, 
                         pch = 1,
-                        size = unit(cpue_subset$NoPerHaul/15+0.1, "char"))  
+                        size = unit(cpue_subset$NoPerHaul/15, "char"))  
           }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
 
 p2 <- levelplot(zsd ~ x * y,
@@ -897,76 +906,73 @@ p2 <- levelplot(zsd ~ x * y,
             grid.points(x = cpue_subset$Xkm,
                         y = cpue_subset$Ykm, 
                         pch = 1,
-                        size = unit(cpue_subset$NoPerHaul/15+0.1, "char"))  
+                        size = unit(cpue_subset$NoPerHaul/15, "char"))  
           }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
 
 grid.arrange(p1,p2, ncol=2)
   
 ```
 
-Next we want to simulate 1000 realizations and integrate over surface (per year) so that we get a population level estimate.  
+Next we want to simulate a number realizations and integrate over surface (per year) so that we get a population level estimate.  
 
-To go from number to weiht we need alpha and beta from growth curve (for length in cm and resulting W is in kg )
-alpha=0.156650
-beta=2.190 ref is bedford et al. 1986
 ```{r, eval=T, echo=T}
-
-# Step 2: Simulate regression parameters We use the function inla.posterior.sample 
+# Simulate regression parameters using inla.posterior.sample 
 # to simulate from the model. The output is stored in the Sim object.
 
 set.seed(1234)
-NSim <- 10
+NSim <- 20
 Sim <- inla.posterior.sample(n = NSim, result = I1nb)
+```
 
+In this example, we thus sample `r NSim` times. The Sim object is a list of length NSim. Each element of  this list contains a single realization. Let's have a closer look.
+
+```{r, eval=T, echo=T}
 names(Sim[[1]])
-length(Sim[[1]]$latent)
+
 #get out names of different types of rows in latent
 rnames <- rownames(Sim[[1]]$latent)
 rtypes <- unique(unlist(lapply(strsplit(rnames,":"),function(x){x[1]})))
 rtypes
+```
+There are thus a number of different types of rows in laten:t: APredicto, Predictor, and the fixed effects.
 
-rtypes[1]
-length(grep(paste0("^",rtypes[1]),rownames(Sim[[1]]$latent)) )
-
-rtypes[2]
-length(grep(paste0("^",rtypes[2]),rownames(Sim[[1]]$latent)) )
-
+```{r, eval=T, echo=T}
+#to get the w par realizations out: 
 rtypes[3]
 wrownum <- grep(paste0("^",rtypes[3]),rownames(Sim[[1]]$latent))
-length(wrownum )
-
 wmat <- sapply(Sim, function(x) {x$latent[wrownum]})
 dim(wmat)
-apply(wmat,1,"mean")
 
-MyParams <- c("Intercept", "fYear2014", "fYear2015", "fYear2016","fYear2017", "fSurveyNSIBTS", "surface")
-lrownum <- unlist(lapply(MyParams, function(x) {grep(x, rownames(Sim[[1]]$latent), fixed = TRUE)}    ))
-lrownum
-Sim[[1]]$latent[rownum]
-
+#to get the fixed effect par realizations out 
+fixed <- rtypes[-(1:3)]
+lrownum <- unlist(lapply(fixed, function(x) {grep(x, rownames(Sim[[1]]$latent), fixed = TRUE)}    ))
 linmat <- sapply(Sim, function(x) {x$latent[lrownum]})
-
-
+dim(linmat)
+dimnames(linmat)[[1]] <- fixed
 ```
+
+
+To go from number to weight we need alpha and beta from growth curve (for length in cm and resulting W is in kg )
+alpha=0.156650
+beta=2.190 ref is bedford et al. 1986
 
 Sim is thus an object that has ...
 
-
 ```{r, eval=FALSE, echo=T}
-
-
 #NOTE THAT WE SHOULD THINK ABOUT how distance works in model because of log link
-
 #NOTE THAT YEARS DO NOT WORK YET HERE (NEED MORE WORK ON fixed effects)
 
-numbers <- matrix(NA, ncol=5, nrow=NSim, dimnames=list("sim"=1:NSim,"year"=startyr:2017))
+numbers <- matrix(NA, ncol=length( startyr:2017), nrow=NSim, dimnames=list("sim"=1:NSim,"year"=startyr:2017))
 
 for (ii in startyr:2017){
   for (jj in 1:NSim){
-            #intercept    (1 times beta for distance)
-    lin <- linmat[1,jj] + 1 * linmat[7,jj]
-    
-    wm.pm100100  <- inla.mesh.project(wproj, wmat[,jj])
+            #intercept  +           year                         +  (1 times beta for surf)
+    if (ii==startyr){
+      lin <- linmat["Intercept",jj] +                                 1 * linmat["surface",jj]
+    }else{
+      lin <- linmat["Intercept",jj] + linmat[paste0("fYear",ii),jj] + 1 * linmat["surface",jj]
+    }
+    # wm.pm100100  <- inla.mesh.project(wproj, wmat[,jj])
     
     res <- exp(lin + wm.pm100100 )
     numbers[jj,as.character(ii)] <- sum(res,na.rm=T)
@@ -974,7 +980,7 @@ for (ii in startyr:2017){
   }
 }
 
-
+```
 
 
 for (i in 1: NSim){
