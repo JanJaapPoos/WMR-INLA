@@ -1037,7 +1037,7 @@ cpue_subset[cpue_subset$Depth ==-9,]$Depth <- NA
 summary(cpue_subset$Depth)
 ``` 
 
-Given that the depth for a given location does not change much over the years, we use a generalized additive model to model a depth map, and to predict depths for those hauls where depth is missing. 
+Given that the depth for a given location does not change much over the years, we use a generalized additive model to model a depth map, and to predict depths for those hauls where depth is missing. Using the depth in INLA requires that the depth is binned. We use 2 m depth bins. 
 
 ```{r, eval=T, echo=T}
 depthmodel <- gam(Depth~te( ShootLong,ShootLat,k=17), data=cpue_subset)
@@ -1045,7 +1045,10 @@ summary(depthmodel)
 gam.check(depthmodel)
 plot(depthmodel, pers=T)
 cpue_subset[is.na(cpue_subset$Depth),]$Depth <-predict(depthmodel,newdata= cpue_subset[is.na(cpue_subset$Depth),])
+cpue_subset$Depth <- round(cpue_subset$Depth/2,0)*2
 ```
+
+
 
 ```{r, eval=T, echo=T}
 N <- nrow(cpue_subset)
@@ -1058,7 +1061,6 @@ Stack1 <- inla.stack(
        X=X, #Covariates
        Depth = cpue_subset$Depth,
        w = w.st))                  #Spatial field
-
 
 #6.	Specify the model formula
 fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde)", ' f(Depth,model="rw2")'),collapse =" + ")))
