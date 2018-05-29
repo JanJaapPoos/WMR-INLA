@@ -639,7 +639,7 @@ IBTSHH[IBTSHH$Distance == -9,]$Distance <- NA
 IBTSHH[IBTSHH$WingSpread == -9,]$WingSpread <- NA
 ``` 
 
-Next, we plot a histogram of haul duration, and a scatterplot of doorspread versus wingspread to get a look at the data. Clearly, haul duration is stored in minutes, with most of the hausl being either 30 minutes or 1 hour. Hauls longer than 80 minute are removed. Because thes contain a large proportion of outliers with respect to e.g. distance. This step removes 'r sum(IBTSHH$HaulDur > 80)' from the `r nrow(IBTSSHH)' hauls.
+Next, we plot a histogram of haul duration, and a scatterplot of doorspread versus wingspread to get a look at the data. Clearly, haul duration is stored in minutes, with most of the hausl being either 30 minutes or 1 hour. Hauls longer than 80 minute are removed. Because thes contain a large proportion of outliers with respect to e.g. distance. This step removes `r sum(IBTSHH$HaulDur > 80)` from the `r nrow(IBTSSHH)` hauls.
 
 The wing spread and doorspread are stored in meters, with wing spreads being in the range `r range(IBTSHH$WingSpread, na.rm=T)` meters and doorspread being in the range  `r range(IBTSHH$DoorSpread, na.rm=T)` meters. There is one clear outlier 
 
