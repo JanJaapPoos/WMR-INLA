@@ -20,7 +20,8 @@ rm(list=ls())
 First, we need to set the path where the data is located and to load the relevant libraries. The inla package can be installed using install.packages("INLA", repos="https://inla.r-inla-download.org/R/stable"). We need the inla package, but also a number of packages for spatial analyses ('rgeos' and 'rgdal')  and for plotting the data and the results ('lattice', 'latticeExtra', 'grid','gridExtra','mapdata', and 'maptools').
 
 ```{r, eval=T, results="hide", echo=TRUE, message=FALSE, warning=FALSE}
-path <- "~/WMR-INLA/data"
+#path <- "~/WMR-INLA/data"
+path <- "d://WMR-INLA/data" 
 
 library(INLA); library(fields); 
 library(mgcv)
@@ -1034,16 +1035,19 @@ Stack1 <- inla.stack(
        X=X )) #Covariates
 
 fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)),collapse =" + ")))
+```
 
+```{r, eval=T, echo=T}
 INLA:::inla.dynload.workaround() 
 I1p <- inla(eval(fsp), family = "poisson", data=inla.stack.data(Stack1),
            control.compute = list(dic = TRUE, waic = TRUE),
            control.predictor = list(A = inla.stack.A(Stack1)))
+```
 
+```{r, eval=T, echo=T}
 I1nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
            control.compute = list(dic = TRUE, waic = TRUE, config=TRUE),
            control.predictor = list(A = inla.stack.A(Stack1)))
-
 ```
 
 check results
