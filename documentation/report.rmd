@@ -20,8 +20,8 @@ rm(list=ls())
 First, we need to set the path where the data is located and to load the relevant libraries. The inla package can be installed using install.packages("INLA", repos="https://inla.r-inla-download.org/R/stable"). We need the inla package, but also a number of packages for spatial analyses ('rgeos' and 'rgdal')  and for plotting the data and the results ('lattice', 'latticeExtra', 'grid','gridExtra','mapdata', and 'maptools').
 
 ```{r, eval=T, results="hide", echo=TRUE, message=FALSE, warning=FALSE}
-#path <- "~/WMR-INLA/data"
-path <- "d://WMR-INLA/data" 
+path <- "~/WMR-INLA/data"
+#path <- "d://WMR-INLA/data" 
 
 library(INLA); library(fields); 
 library(mgcv)
