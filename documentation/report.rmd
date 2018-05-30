@@ -107,11 +107,11 @@ The records that have lenghts equal to zero (that indicated zero hauls in our or
 full_cpue <- full_cpue[full_cpue$LngtClass > 0,]
 ```
 
-In addition, there are some observations that are highly unlikely: For instance there is a single observation of an individual of 100 cm (in 1977). This is highly suspicious, becuse it is far larger than than any other observation, and likely due to species mis-identification. This can be seen in the histogram of length observations below:
+In addition, there are some observations that are highly unlikely: For instance there is a single observation of an individual of 100 cm (in 1977). This is highly suspicious because it is far larger than than any other observation, and likely due to species mis-identification. This can be seen in the histogram of length observations below. One could even consider removing the observations of individuals larger than 750 mm.
 
 
 ```{r, eval=TRUE, echo=TRUE, dpi=600}
-hist(full_cpue[full_cpue$NoPerHaul >0,]$LngtClass, breaks=100, xlab="Length (mm)", main="Histogram of observed lengths")
+hist(full_cpue[full_cpue$NoPerHaul >0,]$LngtClass, breaks=100, xlab="Length (mm)", main="Observed lengths")
 abline(v=990, col="red")
 ```
 
@@ -171,8 +171,8 @@ We also plot a quick histogram of the counts, to give us an impression of the st
 
 ```{r, eval=TRUE, echo=TRUE}
 par(mfrow=c(1,2))
-hist(cpue_subset[cpue_subset$Survey == "BTS",]$NoPerHaul, 200, xlab= "Number per haul", main="Histogram of counts per haul BTS")
-hist(cpue_subset[cpue_subset$Survey == "NSIBTS",]$NoPerHaul, 200, xlab= "Number per haul", main="Histogram of counts per haul IBTS")
+hist(cpue_subset[cpue_subset$Survey == "BTS",]$NoPerHaul, 200, xlab= "Number per haul", main="Counts per haul BTS")
+hist(cpue_subset[cpue_subset$Survey == "NSIBTS",]$NoPerHaul, 200, xlab= "Number per haul", main="Counts per haul IBTS")
 
 ```
 
@@ -298,11 +298,11 @@ Plot the histograms of observations and fits for both models
 idx <- inla.stack.index(Stack1, tag= 'Fit')$data
 
 par(mfrow=c(1,2))
-hist(round(I1p$summary.fitted.values[idx,"mean"],0),300, xlim=c(0,50), ylim=c(0,4000), xlab="Counts", main="Histogram of observed versus predicted counts")
+hist(round(I1p$summary.fitted.values[idx,"mean"],0),300, xlim=c(0,50), ylim=c(0,4000), xlab="Counts", main="Poisson model")
 obshist <- table(cpue_subset$NoPerHaul)
 points(x=names(obshist), y=c(obshist), pch=20)
 
-hist(round(I1nb$summary.fitted.values[idx,"mean"],0),200, xlim=c(0,50), ylim=c(0,4000), xlab="Counts", main="Histogram of observed versus predicted counts")
+hist(round(I1nb$summary.fitted.values[idx,"mean"],0),200, xlim=c(0,50), ylim=c(0,4000), xlab="Counts", main="Negative binomial model")
 obshist <- table(cpue_subset$NoPerHaul)
 points(x=names(obshist), y=c(obshist), pch=20)
 
@@ -337,7 +337,7 @@ p1 <- levelplot(zm ~ x * y  ,
             grid.points(x = cpue_subset$Xkm,
                         y = cpue_subset$Ykm, 
                         pch = 1,
-                        size = unit(cpue_subset$NoPerHaul/15+0.1, "char"))  
+                        size = unit(cpue_subset$NoPerHaul/15, "char"))  
           }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
 
 p2 <- levelplot(zsd ~ x * y,
@@ -349,10 +349,7 @@ p2 <- levelplot(zsd ~ x * y,
           col.regions=tim.colors(25, alpha = 1),
           panel=function(x, y, z, subscripts,...){
             panel.levelplot(x, y, z, subscripts,...)
-            grid.points(x = cpue_subset$Xkm,
-                        y = cpue_subset$Ykm, 
-                        pch = 1,
-                        size = unit(cpue_subset$NoPerHaul/15+0.1, "char"))  
+            
           }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
 
 grid.arrange(p1,p2, ncol=2)
@@ -462,7 +459,7 @@ Next we inspect the length range in the data by making a histogram of length obs
 There are no individuals with lengths over 680 mm observed. Hence, we remove those lengthclasses (with only zeros) from the data set and define the knots to be within the new length range 
 
 ```{r, eval=T, echo=T}
-hist(cpue_subset$LngtClass,200)
+hist(cpue_subset$LngtClass,200, main="", xlab="Length class (mm)")
 knots <- seq(from = 50, to = 550, by = 100)
 knots 
 ```
@@ -645,7 +642,7 @@ The wing spread and doorspread are stored in meters, with wing spreads being in 
 
 ```{r, eval=TRUE, echo=TRUE, dpi=600}
 par(mfrow=c(1,2))
-hist(IBTSHH$HaulDur,120, xlim=c(0,120))
+hist(IBTSHH$HaulDur,120, xlim=c(0,120), main= "", xlab="Haul duration (minutes)")
 abline(v=80, lty=2)
 IBTSHH <- IBTSHH[IBTSHH$HaulDur <= 80,]
 plot(IBTSHH$WingSpread,IBTSHH$DoorSpread, xlab="Wingspread (m)", ylab= "Doorspread (m)")
@@ -755,7 +752,7 @@ The earlier we start, the more information we will obtain from the analysis on t
 cpue_subset <- aggregate(NoPerHaul ~ haulCode + Survey +  Quarter + Ship + Gear + HaulNo + Year + HaulDur + surface + ShootLong + ShootLat +  Xkm + Ykm +  Depth, data= cpue_subset,FUN="sum")
 ```
 
-We do not plot the exploratory data analayses again. As a reminder of the size of the dataset: the lenght aggregation has reduced it to `r  nrow(cpue_subset)` rows. This is the number of unique hauls in our data, which now spans years `r cpue_subset$Year`.
+We do not plot the exploratory data analayses again. As a reminder of the size of the dataset: the lenght aggregation has reduced it to `r  nrow(cpue_subset)` rows. This is the number of unique hauls in our data, which now spans years `r min(cpue_subset$Year)` to `r max(cpue_subset$Year)`.
 
 ## Making a spatial mesh for the data
 
@@ -907,10 +904,7 @@ p2 <- levelplot(zsd ~ x * y,
           col.regions=tim.colors(25, alpha = 1),
           panel=function(x, y, z, subscripts,...){
             panel.levelplot(x, y, z, subscripts,...)
-            grid.points(x = cpue_subset$Xkm,
-                        y = cpue_subset$Ykm, 
-                        pch = 1,
-                        size = unit(cpue_subset$NoPerHaul/15, "char"))  
+           
           }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
 
 grid.arrange(p1,p2, ncol=2)
@@ -983,12 +977,12 @@ for (ii in startyr:2017){
 
 ```
 
-
+Number is the estimated number per km2 (minus the spatial effect)
 what are the conf bounds for numbers per year?
 
 ```{r, eval=T, echo=T}
 qnumbers <- apply(numbers,2, quantile,c(0.025,0.5,0.975))
-matplot(t(qnumbers))
+matplot(t(qnumbers), xlab="Years", ylab="Numbers (km-2)")
 ```
 
 what are the average weights per year?
@@ -1025,6 +1019,43 @@ Now that we have kg per km2 we need to multiply by surface of North Sea, and go 
 qwtsNS <- (qwts * 750000)/1000
 ```
 
+## Comparing fixed effects for model with and without spatial correlation
+
+We only need stack without w
+```{r, eval=T, echo=T}
+
+N <- nrow(cpue_subset)
+Stack1 <- inla.stack(
+    tag  = "Fit",
+    data = list(y = cpue_subset$NoPerHaul),    
+    A    = list(1,1),                      
+    effects = list( 
+       Intercept=rep(1,N),
+       X=X )) #Covariates
+
+fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)),collapse =" + ")))
+
+INLA:::inla.dynload.workaround() 
+I1p <- inla(eval(fsp), family = "poisson", data=inla.stack.data(Stack1),
+           control.compute = list(dic = TRUE, waic = TRUE),
+           control.predictor = list(A = inla.stack.A(Stack1)))
+
+I1nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
+           control.compute = list(dic = TRUE, waic = TRUE, config=TRUE),
+           control.predictor = list(A = inla.stack.A(Stack1)))
+
+```
+
+check results
+
+```{r, eval=T, echo=T}
+summary(I1p)
+
+summary(I1nb)
+```
+
+
+
 
 ## Including depth in the swept area estimation
 
@@ -1043,7 +1074,7 @@ Given that the depth for a given location does not change much over the years, w
 depthmodel <- gam(Depth~te( ShootLong,ShootLat,k=17), data=cpue_subset)
 summary(depthmodel)
 gam.check(depthmodel)
-plot(depthmodel, pers=T)
+plot(depthmodel)
 cpue_subset[is.na(cpue_subset$Depth),]$Depth <-predict(depthmodel,newdata= cpue_subset[is.na(cpue_subset$Depth),])
 cpue_subset$Depth <- round(cpue_subset$Depth/2,0)*2
 ```
@@ -1145,10 +1176,6 @@ p2 <- levelplot(zsd ~ x * y,
           col.regions=tim.colors(25, alpha = 1),
           panel=function(x, y, z, subscripts,...){
             panel.levelplot(x, y, z, subscripts,...)
-            grid.points(x = cpue_subset$Xkm,
-                        y = cpue_subset$Ykm, 
-                        pch = 1,
-                        size = unit(cpue_subset$NoPerHaul/15, "char"))  
           }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
 
 grid.arrange(p1,p2, ncol=2)
