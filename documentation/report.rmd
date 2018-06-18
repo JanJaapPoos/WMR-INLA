@@ -365,7 +365,7 @@ Sigma_u
 range       #Distance at which the correlation diminishes
 
 # Show correlation structure
-LocMesh <- mesh1aaptit$loc[,1:2]
+LocMesh <- mesh1a$loc[,1:2]
 
 # And then we calculate the distance between each vertex.
 D <- as.matrix(dist(LocMesh))
@@ -619,7 +619,7 @@ Stack2 <- inla.stack(
   effects = list(  
     Intercept = rep(1, N),       
     X = as.data.frame(X), # Covariates
-    w.st))                # Spatial-temp field  
+    w = w.st))                # Spatial-temp field  
 
 ```
 
@@ -1101,47 +1101,9 @@ Now that we have kg per km2 we need to multiply by surface of North Sea, and go 
 
 ```{r, eval=T, echo=T}
 qwtsNS <- (qwts * 750000)/1000
+matplot(t(qwtsNS), xlab="Years", ylab="Estimated Total Stock Weight (tonnes)")
+
 ```
-
-## Comparing fixed effects for model with and without spatial correlation
-
-We only need stack without w
-```{r, eval=T, echo=T}
-
-N <- nrow(cpue_subset)
-Stack1 <- inla.stack(
-    tag  = "Fit",
-    data = list(y = cpue_subset$NoPerHaul),    
-    A    = list(1,1),                      
-    effects = list( 
-       Intercept=rep(1,N),
-       X=X )) #Covariates
-
-fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)),collapse =" + ")))
-```
-
-```{r, eval=T, echo=T}
-INLA:::inla.dynload.workaround() 
-I1p <- inla(eval(fsp), family = "poisson", data=inla.stack.data(Stack1),
-           control.compute = list(dic = TRUE, waic = TRUE),
-           control.predictor = list(A = inla.stack.A(Stack1)))
-```
-
-```{r, eval=T, echo=T}
-I1nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
-           control.compute = list(dic = TRUE, waic = TRUE, config=TRUE),
-           control.predictor = list(A = inla.stack.A(Stack1)))
-```
-
-check results
-
-```{r, eval=T, echo=T}
-summary(I1p)
-
-summary(I1nb)
-```
-
-
 
 
 ## Including depth in the swept area estimation
