@@ -141,7 +141,7 @@ full_cpue <- transform(full_cpue, Survey=gsub("-","",Survey))
 
 We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will subset the data, and start our analysis from a fiven year. That year is stored in startyr.    
 ```{r, eval=TRUE, echo=TRUE}
-startyr <- 2005
+startyr <- 2013
 cpue_subset <- full_cpue[full_cpue$Year >= startyr,]
 ```
 
@@ -285,28 +285,62 @@ I1p <- inla(eval(fsp), family = "poisson", data=inla.stack.data(Stack1),
 I1nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
            control.compute = list(dic = TRUE, waic = TRUE, config=TRUE),
            control.predictor = list(A = inla.stack.A(Stack1)))
+
+I1zip <- inla(eval(fsp), family = "zeroinflatedpoisson1", data=inla.stack.data(Stack1),
+           control.compute = list(dic = TRUE, waic = TRUE),
+           control.predictor = list(A = inla.stack.A(Stack1)))
+
+I1zinb <- inla(eval(fsp), family = "zeroinflatednbinomial1", data=inla.stack.data(Stack1),
+           control.compute = list(dic = TRUE, waic = TRUE, config=TRUE),
+           control.predictor = list(A = inla.stack.A(Stack1)))
+
+
 ```
-Once the INLA models are run, a summary can be printed for the two models. This summary contains much of the relevant information for the models.
+Once the INLA models are run, a summary can be printed for the two models. This summary contains much of the relevant information for the models. Below is the example for the Poisson model. The summary also  contains the WAIC criterion. WAIC works just like AIC in that the model with the lowest WAIC should be selected.
 
 ```{r, eval=T, echo=T}
 summary(I1p)
 
-summary(I1nb)
+summary(I1p)$waic$waic
+
 ```
-Plot the histograms of observations and fits for both models 
+
+The Poisson model this has a WAIC value of `r summary(I1p)$waic$waic`. We can make a simple table to compare the WAIC values of the different models.
+
+```{r, eval=T, echo=T}
+dic2  <- c(I1p$dic$dic, I1nb$dic$dic, I1zip$dic$dic, I1zinb$dic$dic)
+waic2 <- c(I1p$waic$waic, I1nb$waic$waic, I1zip$waic$waic, I1zinb$waic$waic)
+Z     <- cbind(dic2, waic2)
+rownames(Z) <- c("Poisson model",  "Negative binomial model", "Zero Inflated Poisson model",  "Zero Inflated Negative binomial model" )
+Z
+```
+
+The negative binomial model has the lowest DIC and WAIC. Let's see the summary of this model.  
+```{r, eval=T, echo=T}
+summary(I1nb)
+
+```
+Plot the histograms of observations and fits for all models. 
 
 ```{r, eval=T, echo=T}
 idx <- inla.stack.index(Stack1, tag= 'Fit')$data
 
-par(mfrow=c(1,2))
-hist(round(I1p$summary.fitted.values[idx,"mean"],0),300, xlim=c(0,50), ylim=c(0,4000), xlab="Counts", main="Poisson model")
-obshist <- table(cpue_subset$NoPerHaul)
-points(x=names(obshist), y=c(obshist), pch=20)
+par(mfrow=c(2,2))
+pos <- barplot(log(table(cpue_subset$NoPerHaul)),names.arg=as.numeric(names(table(cpue_subset$NoPerHaul))),ylim=c(0,log(max(table(cpue_subset$NoPerHaul),na.rm=T))*1.3),main="Poisson model")
+breaks <- c(as.numeric(names(table(cpue_subset$NoPerHaul))),1000)
+points(y=log(table(cut(I1p$summary.fitted.values[idx,"mean"],breaks=breaks))),x=pos[,1],col=2,pch=19)
 
-hist(round(I1nb$summary.fitted.values[idx,"mean"],0),200, xlim=c(0,50), ylim=c(0,4000), xlab="Counts", main="Negative binomial model")
-obshist <- table(cpue_subset$NoPerHaul)
-points(x=names(obshist), y=c(obshist), pch=20)
+pos <- barplot(log(table(cpue_subset$NoPerHaul)),names.arg=as.numeric(names(table(cpue_subset$NoPerHaul))),ylim=c(0,log(max(table(cpue_subset$NoPerHaul),na.rm=T))*1.3),main="Negative binomial model")
+breaks <- c(as.numeric(names(table(cpue_subset$NoPerHaul))),1000)
+points(y=log(table(cut(I1nb$summary.fitted.values[idx,"mean"],breaks=breaks))),x=pos[,1],col=2,pch=19)
 
+pos <- barplot(log(table(cpue_subset$NoPerHaul)),names.arg=as.numeric(names(table(cpue_subset$NoPerHaul))),ylim=c(0,log(max(table(cpue_subset$NoPerHaul),na.rm=T))*1.3),main="ZIP model")
+breaks <- c(as.numeric(names(table(cpue_subset$NoPerHaul))),1000)
+points(y=log(table(cut(I1zip$summary.fitted.values[idx,"mean"],breaks=breaks))),x=pos[,1],col=2,pch=19)
+
+pos <- barplot(log(table(cpue_subset$NoPerHaul)),names.arg=as.numeric(names(table(cpue_subset$NoPerHaul))),ylim=c(0,log(max(table(cpue_subset$NoPerHaul),na.rm=T))*1.3),main="ZINB model")
+breaks <- c(as.numeric(names(table(cpue_subset$NoPerHaul))),1000)
+points(y=log(table(cut(I1zinb$summary.fitted.values[idx,"mean"],breaks=breaks))),x=pos[,1],col=2,pch=19)
 ```
 
 
@@ -1010,9 +1044,6 @@ qwts <- annualmnwt[annualmnwt$Year >= startyr,]$mnwt * qnumbers
 
 ```
 
-
-
-
 Now that we have kg per km2 we need to multiply by surface of North Sea, and go from numbers to weights. For now we assume that total surface ==750000 km,but this is probably overestmitae for us because not everything is sampled. We shoudl use the mesh, which has sum of 0, but at least gives us proper surface. Divde by 1000 to go from kg to tonnes
 
 
@@ -1063,11 +1094,12 @@ summary(I1nb)
 
 ## Including depth in the swept area estimation
 
-We have depth for many but not all hauls in the full cpue set. The missing values are indicted by a value of -9, and these have to be transformed into NAs
+We have depth for many but not all hauls in the full cpue set. The maximum fishing depth for IBTS standard stations in the North Sea is 200 m. and in Division IIIa 250 m. However, there are some hauls taken at depths deeper than 300 m. and we exclude those. The missing values are indicated by a value of -9, and these have to be transformed into NAs.
 
 ```{r, eval=T, echo=T}
 nrow(cpue_subset)
 summary(cpue_subset$Depth)
+cpue_subset <- cpue_subset[cpue_subset$Depth >300,]
 cpue_subset[cpue_subset$Depth ==-9,]$Depth <- NA
 summary(cpue_subset$Depth)
 ``` 
