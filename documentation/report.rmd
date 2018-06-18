@@ -954,12 +954,12 @@ yres <- round(yl[2]-yl[1])
 
 wproj <- inla.mesh.projector(mesh1a, dims=c(xres,yres), xlim = xl, ylim = yl) 
 
-wm.pm100100  <- inla.mesh.project(wproj, I1nb$summary.random$w$mean)
-wsd.pm100100 <- inla.mesh.project(wproj, I1nb$summary.random$w$sd)
+wm.pm1km2  <- inla.mesh.project(wproj, I1nb$summary.random$w$mean)
+wsd.pm1km2 <- inla.mesh.project(wproj, I1nb$summary.random$w$sd)
     
 grid     <- expand.grid(x = wproj$x, y = wproj$y)
-grid$zm  <- as.vector(wm.pm100100)   
-grid$zsd <- as.vector(wsd.pm100100)   
+grid$zm  <- as.vector(wm.pm1km2)   
+grid$zsd <- as.vector(wsd.pm1km2)   
 
 wld <- map('world', xlim=c(-5,15), ylim=c(47,62),plot=FALSE)
 wld <- data.frame(lon=wld$x, lat=wld$y)
@@ -1039,203 +1039,29 @@ dimnames(linmat)[[1]] <- fixed
 Sim is thus an object that has ...
 
 ```{r, eval=T, echo=T}
-#NOTE THAT WE SHOULD THINK ABOUT how distance works in model because of log link
-#NOTE THAT YEARS DO NOT WORK YET HERE (NEED MORE WORK ON fixed effects)
-
 numbers <- matrix(NA, ncol=length( startyr:2017), nrow=NSim, dimnames=list("sim"=1:NSim,"year"=startyr:2017))
 
 for (ii in startyr:2017){
   for (jj in 1:NSim){
-            #intercept  +           year                         +  (1 times beta for surf, but here 0 times beta for lsurface (so we get 1 km))
+            #intercept  +           year                         +  ( 0 times beta for lsurface (so we get 1 km))
     if (ii==startyr){
       lin <- linmat["Intercept",jj] +                                 0 * linmat["lsurface",jj]
     }else{
       lin <- linmat["Intercept",jj] + linmat[paste0("fYear",ii),jj] + 0 * linmat["lsurface",jj]
     }
-    #commented out section is for including the spatial corr, but given that the sum of this field ==0, adding it would not make a difference 
-    # wm.pm100100  <- inla.mesh.project(wproj, wmat[,jj])
-    #res <- exp(lin + wm.pm100100 )
-    #numbers[jj,as.character(ii)] <- sum(res,na.rm=T)
+    # section below is for including spatial corr 
+    wm.pm1km2  <- inla.mesh.project(wproj, wmat[,jj])
+    res <- exp(lin + wm.pm1km2 )
+    numbers[jj,as.character(ii)] <- sum(rres,na.rm=T)
     
-    res <- exp(lin)
-    numbers[jj,as.character(ii)] <-  res
+    #use code below if only interested in fixed effects
+    #res <- exp(lin)
+    #numbers[jj,as.character(ii)] <-  res
   }
 }
 
-```
+## Code in Alain Zuur course. Note that he has rpois
 
-Number is the estimated number per km2 (minus the spatial effect)
-what are the conf bounds for numbers per year?
-
-```{r, eval=T, echo=T}
-qnumbers <- apply(numbers,2, quantile,c(0.025,0.5,0.975))
-matplot(t(qnumbers), xlab="Years", ylab="Numbers (km-2)")
-```
-
-what are the average weights per year?
-To go from number to weight we need alpha and beta from growth curve (for length in cm and resulting W is in g )
-alpha=0.156650
-beta=2.190 ref is bedford et al. 1986
-
-
-```{r, eval=T, echo=T}
-alpha <- 0.156650
-beta <- 2.190
-full_cpue$wt <-  (alpha * (full_cpue$LngtClass/10)^beta * full_cpue$NoPerHaul) /1000
-annualmnwt <- aggregate(cbind(wt,NoPerHaul) ~ Year, data= full_cpue,  FUN= "sum") 
-annualmnwt <- within(annualmnwt, mnwt <- wt/NoPerHaul)
-
-plot(mnwt~Year, data=annualmnwt, type="b")
-```
-
-Multiply weights by numbers per km2 to get kg per km2
-
-```{r, eval=T, echo=T}
-qwts <- annualmnwt[annualmnwt$Year >= startyr,]$mnwt * qnumbers
-
-
-```
-
-Now that we have kg per km2 we need to multiply by surface of North Sea, and go from numbers to weights. For now we assume that total surface ==750000 km,but this is probably overestmitae for us because not everything is sampled. We shoudl use the mesh, which has sum of 0, but at least gives us proper surface. Divde by 1000 to go from kg to tonnes
-
-
-```{r, eval=T, echo=T}
-qwtsNS <- (qwts * 750000)/1000
-matplot(t(qwtsNS), xlab="Years", ylab="Estimated Total Stock Weight (tonnes)")
-
-```
-
-
-## Including depth in the swept area estimation
-
-We have depth for many but not all hauls in the full cpue set. The maximum fishing depth for IBTS standard stations in the North Sea is 200 m. and in Division IIIa 250 m. However, there are some hauls taken at depths deeper than 300 m. and we exclude those. The missing values are indicated by a value of -9, and these have to be transformed into NAs.
-
-```{r, eval=T, echo=T}
-nrow(cpue_subset)
-summary(cpue_subset$Depth)
-cpue_subset <- cpue_subset[cpue_subset$Depth < 300,]
-cpue_subset[cpue_subset$Depth ==-9,]$Depth <- NA
-summary(cpue_subset$Depth)
-``` 
-
-Given that the depth for a given location does not change much over the years, we use a generalized additive model to model a depth map, and to predict depths for those hauls where depth is missing. Using the depth in INLA requires that the depth is binned. We use 2 m depth bins. 
-
-```{r, eval=T, echo=T}
-depthmodel <- gam(Depth~te( ShootLong,ShootLat,k=17), data=cpue_subset)
-summary(depthmodel)
-gam.check(depthmodel)
-plot(depthmodel)
-cpue_subset[is.na(cpue_subset$Depth),]$Depth <-predict(depthmodel,newdata= cpue_subset[is.na(cpue_subset$Depth),])
-cpue_subset$Depth <- round(cpue_subset$Depth/2,0)*2
-```
-
-
-
-```{r, eval=T, echo=T}
-N <- nrow(cpue_subset)
-Stack1 <- inla.stack(
-    tag  = "Fit",
-    data = list(y = cpue_subset$NoPerHaul),    
-    A    = list(1,1,1, A1),                      
-    effects = list( 
-       Intercept=rep(1,N),
-       X=X, #Covariates
-       Depth = cpue_subset$Depth,
-       w = w.st))                  #Spatial field
-
-#6.	Specify the model formula
-fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde)", ' f(Depth,model="rw2")'),collapse =" + ")))
-```
-
-```{r, eval=T, echo=T}
-INLA:::inla.dynload.workaround() 
-I1p <- inla(eval(fsp), family = "poisson", data=inla.stack.data(Stack1),
-           control.compute = list(dic = TRUE, waic = TRUE, openmp.strategy="large"),
-           control.predictor = list(A = inla.stack.A(Stack1)))
-
-I1nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
-           control.compute = list(dic = TRUE, waic = TRUE, config=TRUE, openmp.strategy="large"),
-           control.predictor = list(A = inla.stack.A(Stack1)))
-
-summary(I1p)
-summary(I1nb)
-
-```
-
-```{r, eval=T, echo=T}
-#plot depth smoother
-Depthm <- I1nb$summary.random$Depth
-
-par(mfrow = c(1,1), mar = c(5,5,2,2), cex.lab = 1.5)
-plot(Depthm[,1:2], type='l',
-     xlab = 'Depth', 
-     ylab = 'Smoother',
-     ylim = c(-2, 2) )
-abline(h=0, lty=3)
-lines(Depthm[, c(1, 4)], lty=2)
-lines(Depthm[, c(1, 6)], lty=2)
-rug(cpue_subset$Depth)
-```
-
-
-
-
-```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
-# we want to make cells of 1 by 1 km. Let's do this first 
-xl <- range(Loc[,1])
-xres <- round(xl[2]-xl[1])
-yl <-  range(Loc[,2])
-yres <- round(yl[2]-yl[1])
-
-wproj <- inla.mesh.projector(mesh1a, dims=c(xres,yres), xlim = xl, ylim = yl) 
-
-wm.pm100100  <- inla.mesh.project(wproj, I1nb$summary.random$w$mean)
-wsd.pm100100 <- inla.mesh.project(wproj, I1nb$summary.random$w$sd)
-    
-grid     <- expand.grid(x = wproj$x, y = wproj$y)
-grid$zm  <- as.vector(wm.pm100100)   
-grid$zsd <- as.vector(wsd.pm100100)   
-
-wld <- map('world', xlim=c(-5,15), ylim=c(47,62),plot=FALSE)
-wld <- data.frame(lon=wld$x, lat=wld$y)
-
-UTMmap <- project(cbind(wld$lon, wld$lat), "+proj=utm +zone=31U ellps=WGS84")
-UTMmapFinal <- data.frame("xm"  =UTMmap[,1]/1e3, "ym" = UTMmap[,2]/1e3)
-
-p1 <- levelplot(zm ~ x * y  ,
-          data = grid, 
-          scales = list(draw = TRUE),
-          xlab = list("Easting", cex = 1),
-          ylab = list("Northing", cex = 1),
-          main = list("Posterior mean spatial random fields", cex = 1),
-          col.regions=tim.colors(25, alpha = 1),
-          panel=function(x, y, z, subscripts,...){
-            panel.levelplot(x, y, z, subscripts,...)
-            grid.points(x = cpue_subset$Xkm,
-                        y = cpue_subset$Ykm, 
-                        pch = 1,
-                        size = unit(cpue_subset$NoPerHaul/15, "char"))  
-          }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
-
-p2 <- levelplot(zsd ~ x * y,
-          data = grid, 
-          scales = list(draw = TRUE),
-          xlab = list("Easting", cex = 1),
-          ylab = list("Northing", cex = 1),
-          main = list("Posterior sd spatial random fields", cex = 1),
-          col.regions=tim.colors(25, alpha = 1),
-          panel=function(x, y, z, subscripts,...){
-            panel.levelplot(x, y, z, subscripts,...)
-          }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
-
-grid.arrange(p1,p2, ncol=2)
-  
-```
-
-
-
-
-```{r, eval=F, echo=T}
 for (i in 1: NSim){
   Betas <- SimData[[i]]$latent[as.numeric(rownum)]
   wk    <- SimData[[i]]$latent[2442:3633]
@@ -1288,72 +1114,166 @@ for (i in 1:nx){
 # match. If they do then the model simulates data that is comparable to the observed data.		
 
 # It is not perfect. We are predicting too many zeros, but not enough ones and twos.
-		
-#############################################
-# Now that we have 1000 simulated data sets from the model, what else shall we do with these simulated 
-# data sets?
 
-# We could calculate the number of zeros in each of the 1,000 data sets.
-zeros <- vector(length = NSim)
-for(i in 1:NSim){
-	zeros[i] <- sum(Ysim[,i] == 0)
-}
 
-table(zeros)
 
-# From the 1,000 simulated data sets, in 2 simulated data sets we had 1141 zeros. In 2 simulated data sets
-# we had 1148 zeros,etc...... Your results will be different as mine.
+```
 
-# Just type 
-Ysim[,1]
-Ysim[,2]
-Ysim[,3]
-#etc
+Number is the estimated number per km2 (minus the spatial effect)
+what are the conf bounds for numbers per year?
 
-#Let's plot this as a table
-plot(table(zeros), 
-     #axes = FALSE,
-     xlab = "How often do we have 0, 1, 2, 3, etc. number of zeros",
-     ylab = "Number of zeros in 1000 simulated data sets",
-     xlim = c(50, 150),
-     main = "Simulation results")
-points(x = sum(LP$nSIE == 0), y = 0, pch = 16, cex = 5, col = 2)
-# The red dot is the number of zeros in the original data set.
-# The data simulated from the Poisson model contains to many zeros.
-#########################################
+```{r, eval=T, echo=T}
+qnumbers <- apply(numbers,2, quantile,c(0.025,0.5,0.975))
+matplot(t(qnumbers), xlab="Years", ylab="Numbers (km-2)")
+```
 
-#########################################
-# What else can we do with the 1,000 simulated data sets? We can also calculate the dispersion statistic for each
-# simulated data set
+what are the average weights per year?
+To go from number to weight we need alpha and beta from growth curve (for length in cm and resulting W is in g )
+alpha=0.156650
+beta=2.190 ref is Bedford et al. 1986
 
-p <- length(Betas) + 2    #Number of regression parameters
-Dispersion <- vector(length = NSim) #Create space
+```{r, eval=T, echo=T}
+alpha <- 0.156650
+beta <- 2.190
+full_cpue$wt <-  (alpha * (full_cpue$LngtClass/10)^beta * full_cpue$NoPerHaul) /1000
+annualmnwt <- aggregate(cbind(wt,NoPerHaul) ~ Year, data= full_cpue,  FUN= "sum") 
+annualmnwt <- within(annualmnwt, mnwt <- wt/NoPerHaul)
 
-# Calculate the dispersion for each simulated data set
-for(i in 1:NSim){
-	e2 <- (Ysim[,i] - mu2) /sqrt(mu2)
-	Dispersion[i] <- sum(e2^2) / (N - p)
-}
+plot(mnwt~Year, data=annualmnwt, type="b")
+```
 
-# Plot this as a table
-hist(Dispersion,
-     xlab = "Dispersion",
-     ylab = "Frequency",
-     xlim = c(0.6, 1.5),
-     breaks = 25)
+Multiply weights by numbers per km2 to get kg per km2
 
-# And visualize the dispersion for the original Poisson GLMM
-points(x = Dispersion2, 
-       y = 0, 
-       pch = 16, 
-       cex = 3, 
-       col = 2)
-# The red dot is the underdispersion in the original data set.
-# We have serious underdispersion!
-# Bugger.
+```{r, eval=T, echo=T}
+qwts <- annualmnwt[annualmnwt$Year >= startyr,]$mnwt * qnumbers
+```
 
-# A Generalized Poisson model may work.
-#
+Now that we have kg per km2 we need to multiply by surface of North Sea, and go from numbers to weights. For now we assume that total surface ==750000 km,but this is probably overestmitae for us because not everything is sampled. We shoudl use the mesh, which has sum of 0, but at least gives us proper surface. Divde by 1000 to go from kg to tonnes
+
+```{r, eval=T, echo=T}
+qwtsNS <- (qwts * 750000)/1000
+matplot(t(qwtsNS), xlab="Years", ylab="Estimated Total Stock Weight (tonnes)")
+```
+
+## Including depth in the swept area estimation
+
+We have depth for many but not all hauls in the full cpue set. The maximum fishing depth for IBTS standard stations in the North Sea is 200 m. and in Division IIIa 250 m. However, there are some hauls taken at depths deeper than 300 m. and we exclude those. The missing values are indicated by a value of -9, and these have to be transformed into NAs.
+
+```{r, eval=T, echo=T}
+nrow(cpue_subset)
+summary(cpue_subset$Depth)
+cpue_subset <- cpue_subset[cpue_subset$Depth < 300,]
+cpue_subset[cpue_subset$Depth ==-9,]$Depth <- NA
+summary(cpue_subset$Depth)
+``` 
+
+Given that the depth for a given location does not change much over the years, we use a generalized additive model to model a depth map, and to predict depths for those hauls where depth is missing. Using the depth in INLA requires that the depth is binned. We use 2 m depth bins. 
+
+```{r, eval=T, echo=T}
+depthmodel <- gam(Depth~te( ShootLong,ShootLat,k=17), data=cpue_subset)
+summary(depthmodel)
+gam.check(depthmodel)
+plot(depthmodel)
+cpue_subset[is.na(cpue_subset$Depth),]$Depth <-predict(depthmodel,newdata= cpue_subset[is.na(cpue_subset$Depth),])
+cpue_subset$Depth <- round(cpue_subset$Depth/2,0)*2
+```
+
+```{r, eval=T, echo=T}
+N <- nrow(cpue_subset)
+Stack1 <- inla.stack(
+    tag  = "Fit",
+    data = list(y = cpue_subset$NoPerHaul),    
+    A    = list(1,1,1, A1),                      
+    effects = list( 
+       Intercept=rep(1,N),
+       X=X, #Covariates
+       Depth = cpue_subset$Depth,
+       w = w.st))                  #Spatial field
+
+#6.	Specify the model formula
+fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde)", ' f(Depth,model="rw2")'),collapse =" + ")))
+```
+
+```{r, eval=T, echo=T}
+INLA:::inla.dynload.workaround() 
+I1p <- inla(eval(fsp), family = "poisson", data=inla.stack.data(Stack1),
+           control.compute = list(dic = TRUE, waic = TRUE, openmp.strategy="large"),
+           control.predictor = list(A = inla.stack.A(Stack1)))
+
+I1nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
+           control.compute = list(dic = TRUE, waic = TRUE, config=TRUE, openmp.strategy="large"),
+           control.predictor = list(A = inla.stack.A(Stack1)))
+
+summary(I1p)
+summary(I1nb)
+
+```
+
+```{r, eval=T, echo=T}
+#plot depth smoother
+Depthm <- I1nb$summary.random$Depth
+
+par(mfrow = c(1,1), mar = c(5,5,2,2), cex.lab = 1.5)
+plot(Depthm[,1:2], type='l',
+     xlab = 'Depth', 
+     ylab = 'Smoother',
+     ylim = c(-2, 2) )
+abline(h=0, lty=3)
+lines(Depthm[, c(1, 4)], lty=2)
+lines(Depthm[, c(1, 6)], lty=2)
+rug(cpue_subset$Depth)
+```
+
+```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
+# we want to make cells of 1 by 1 km. Let's do this first 
+xl <- range(Loc[,1])
+xres <- round(xl[2]-xl[1])
+yl <-  range(Loc[,2])
+yres <- round(yl[2]-yl[1])
+
+wproj <- inla.mesh.projector(mesh1a, dims=c(xres,yres), xlim = xl, ylim = yl) 
+
+wm.pm100100  <- inla.mesh.project(wproj, I1nb$summary.random$w$mean)
+wsd.pm100100 <- inla.mesh.project(wproj, I1nb$summary.random$w$sd)
+    
+grid     <- expand.grid(x = wproj$x, y = wproj$y)
+grid$zm  <- as.vector(wm.pm100100)   
+grid$zsd <- as.vector(wsd.pm100100)   
+
+wld <- map('world', xlim=c(-5,15), ylim=c(47,62),plot=FALSE)
+wld <- data.frame(lon=wld$x, lat=wld$y)
+
+UTMmap <- project(cbind(wld$lon, wld$lat), "+proj=utm +zone=31U ellps=WGS84")
+UTMmapFinal <- data.frame("xm"  =UTMmap[,1]/1e3, "ym" = UTMmap[,2]/1e3)
+
+p1 <- levelplot(zm ~ x * y  ,
+          data = grid, 
+          scales = list(draw = TRUE),
+          xlab = list("Easting", cex = 1),
+          ylab = list("Northing", cex = 1),
+          main = list("Posterior mean spatial random fields", cex = 1),
+          col.regions=tim.colors(25, alpha = 1),
+          panel=function(x, y, z, subscripts,...){
+            panel.levelplot(x, y, z, subscripts,...)
+            grid.points(x = cpue_subset$Xkm,
+                        y = cpue_subset$Ykm, 
+                        pch = 1,
+                        size = unit(cpue_subset$NoPerHaul/15, "char"))  
+          }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
+
+p2 <- levelplot(zsd ~ x * y,
+          data = grid, 
+          scales = list(draw = TRUE),
+          xlab = list("Easting", cex = 1),
+          ylab = list("Northing", cex = 1),
+          main = list("Posterior sd spatial random fields", cex = 1),
+          col.regions=tim.colors(25, alpha = 1),
+          panel=function(x, y, z, subscripts,...){
+            panel.levelplot(x, y, z, subscripts,...)
+          }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
+
+grid.arrange(p1,p2, ncol=2)
+  
 ```
 
 
@@ -1409,12 +1329,6 @@ for (i in 1: NSim){
 ## Including depth in the swept area estimation and spatio temporal-correlation
 
 
-
-
-#---------------------------------
-# Step 4) Define the spatial field
-#---------------------------------
-
 ```{r, eval=TRUE, echo=TRUE}
 # 2. Define the weighting factors a_ik (also called the projector matrix).
 endyr <- max(cpue_subset$Year)
@@ -1459,15 +1373,10 @@ fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde
 
 ```{r, eval=T, echo=T}
 INLA:::inla.dynload.workaround() 
-I1p <- inla(eval(fsp), family = "poisson", data=inla.stack.data(Stack1),
-           control.compute = list(dic = TRUE, waic = TRUE, openmp.strategy="large"),
-           control.predictor = list(A = inla.stack.A(Stack1)))
-
 I1nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
            control.compute = list(dic = TRUE, waic = TRUE, config=TRUE, openmp.strategy="large"),
            control.predictor = list(A = inla.stack.A(Stack1)))
 
-summary(I1p)
 summary(I1nb)
 
 ```
@@ -1488,8 +1397,6 @@ rug(cpue_subset$Depth)
 ```
 
 
-
-
 ```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
 # we want to make cells of 1 by 1 km. Let's do this first 
 xl <- range(Loc[,1])
@@ -1499,12 +1406,12 @@ yres <- round(yl[2]-yl[1])
 
 wproj <- inla.mesh.projector(mesh1a, dims=c(xres,yres), xlim = xl, ylim = yl) 
 
-wm.pm100100  <- inla.mesh.project(wproj, I1nb$summary.random$w$mean)
-wsd.pm100100 <- inla.mesh.project(wproj, I1nb$summary.random$w$sd)
-    
-grid     <- expand.grid(x = wproj$x, y = wproj$y)
-grid$zm  <- as.vector(wm.pm100100)   
-grid$zsd <- as.vector(wsd.pm100100)   
+grid <- expand.grid(year=startyr:endyr, x = wproj$x, y = wproj$y,zm=NA)
+
+for (i in startyr:endyr){
+    w.pm1km2 <- inla.mesh.project(wproj,w[w.st$w.group==which(i==Year)])
+    grid[grid$length==i,]$zm <- as.vector(w.pm1km2)  
+}
 
 wld <- map('world', xlim=c(-5,15), ylim=c(47,62),plot=FALSE)
 wld <- data.frame(lon=wld$x, lat=wld$y)
@@ -1512,7 +1419,7 @@ wld <- data.frame(lon=wld$x, lat=wld$y)
 UTMmap <- project(cbind(wld$lon, wld$lat), "+proj=utm +zone=31U ellps=WGS84")
 UTMmapFinal <- data.frame("xm"  =UTMmap[,1]/1e3, "ym" = UTMmap[,2]/1e3)
 
-p1 <- levelplot(zm ~ x * y  ,
+p1 <- levelplot(zm ~ x * y|year  ,
           data = grid, 
           scales = list(draw = TRUE),
           xlab = list("Easting", cex = 1),
@@ -1521,198 +1428,10 @@ p1 <- levelplot(zm ~ x * y  ,
           col.regions=tim.colors(25, alpha = 1),
           panel=function(x, y, z, subscripts,...){
             panel.levelplot(x, y, z, subscripts,...)
-            grid.points(x = cpue_subset$Xkm,
-                        y = cpue_subset$Ykm, 
+            grid.points(x = cpue_subset[cpue_subset$Year == grid[subscripts[1],]$year,]$Xkm,
+                        y = cpue_subset[cpue_subset$Year == grid[subscripts[1],]$year,]$Ykm, 
                         pch = 1,
-                        size = unit(cpue_subset$NoPerHaul/15, "char"))  
+                        size = unit(cpue_subset[cpue_subset$Year ==grid[subscripts[1],]$year,]$NoPerHaul/15, "char"))  
           }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
 
-p2 <- levelplot(zsd ~ x * y,
-          data = grid, 
-          scales = list(draw = TRUE),
-          xlab = list("Easting", cex = 1),
-          ylab = list("Northing", cex = 1),
-          main = list("Posterior sd spatial random fields", cex = 1),
-          col.regions=tim.colors(25, alpha = 1),
-          panel=function(x, y, z, subscripts,...){
-            panel.levelplot(x, y, z, subscripts,...)
-          }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
-
-grid.arrange(p1,p2, ncol=2)
-  
 ```
-
-
-
-
-```{r, eval=F, echo=T}
-for (i in 1: NSim){
-  Betas <- SimData[[i]]$latent[as.numeric(rownum)]
-  wk    <- SimData[[i]]$latent[2442:3633]
-  FixedPart   <- Xm %*% Betas
-  SpatialPart <- Am %*% wk
-  mu.i[,i]    <- exp(FixedPart + SpatialPart)
-  Ysim[,i]    <- rpois(n = nrow(LP), lambda = mu.i[,i])
-}
-table(Ysim[,1])
-table(Ysim[,2])
-table(Ysim[,3])
-
-# Don't try to understand all the fancy code below Just the principle is enough.
-
-# RUN FROM HERE.....
-Z <- matrix(nrow = max(Ysim)+1, ncol = NSim)
-for (i in 1: NSim){
-	zi <- table(Ysim[,i])
-	I <- as.numeric(names(zi)) + 1
-	Z[I,i] <- zi
-}
-
-par(mfrow = c(1,1), mar = c(5,5,2,2), cex.lab = 1.5)
-Z[is.na(Z)] <- 0
-Xi <- 0: max(Ysim)
-AverageTable <- rowSums(Z) / NSim
-
-AverageTable <- rowSums(Z) / NSim
-apply(Z, 1, mean)
-SD <- apply(Z, 1, sd)
-
-Zs <- table(LP$nSIE)
-nx <- length(Zs)
-NamesZ <- as.numeric(names(Zs))
-
-plot(x = Xi, y = AverageTable, type = "h", lwd = 5, xlab = "Simulated endemic richness values", ylab = "Frequencies", ylim = c(0, 250))
-		
-# Add SDs
-for (i in 1:nx){
-    segments(x0 = NamesZ[i], x1 = NamesZ[i], y0 = AverageTable[i], y1 = AverageTable[i] + SD[i],lwd = 15,col = 1)
-}
-		
-#And add the table for the observed data
-for (i in 1:nx){
-    segments(x0 = NamesZ[i] + 0.2, x1 = NamesZ[i] + 0.2, y0 = 0, y1 = Zs[i],	lwd = 2,	col = 2)
-}
-
-# The red bars represent the frequency table for the observed data. The black lines is
-# the average frequency table for the 1000 simulated data sets. They should hopefully 
-# match. If they do then the model simulates data that is comparable to the observed data.		
-
-# It is not perfect. We are predicting too many zeros, but not enough ones and twos.
-		
-#############################################
-# Now that we have 1000 simulated data sets from the model, what else shall we do with these simulated 
-# data sets?
-
-# We could calculate the number of zeros in each of the 1,000 data sets.
-zeros <- vector(length = NSim)
-for(i in 1:NSim){
-	zeros[i] <- sum(Ysim[,i] == 0)
-}
-
-table(zeros)
-
-# From the 1,000 simulated data sets, in 2 simulated data sets we had 1141 zeros. In 2 simulated data sets
-# we had 1148 zeros,etc...... Your results will be different as mine.
-
-# Just type 
-Ysim[,1]
-Ysim[,2]
-Ysim[,3]
-#etc
-
-#Let's plot this as a table
-plot(table(zeros), 
-     #axes = FALSE,
-     xlab = "How often do we have 0, 1, 2, 3, etc. number of zeros",
-     ylab = "Number of zeros in 1000 simulated data sets",
-     xlim = c(50, 150),
-     main = "Simulation results")
-points(x = sum(LP$nSIE == 0), y = 0, pch = 16, cex = 5, col = 2)
-# The red dot is the number of zeros in the original data set.
-# The data simulated from the Poisson model contains to many zeros.
-#########################################
-
-#########################################
-# What else can we do with the 1,000 simulated data sets? We can also calculate the dispersion statistic for each
-# simulated data set
-
-p <- length(Betas) + 2    #Number of regression parameters
-Dispersion <- vector(length = NSim) #Create space
-
-# Calculate the dispersion for each simulated data set
-for(i in 1:NSim){
-	e2 <- (Ysim[,i] - mu2) /sqrt(mu2)
-	Dispersion[i] <- sum(e2^2) / (N - p)
-}
-
-# Plot this as a table
-hist(Dispersion,
-     xlab = "Dispersion",
-     ylab = "Frequency",
-     xlim = c(0.6, 1.5),
-     breaks = 25)
-
-# And visualize the dispersion for the original Poisson GLMM
-points(x = Dispersion2, 
-       y = 0, 
-       pch = 16, 
-       cex = 3, 
-       col = 2)
-# The red dot is the underdispersion in the original data set.
-# We have serious underdispersion!
-# Bugger.
-
-# A Generalized Poisson model may work.
-#
-```
-
-
-```{r, eval=FALSE, echo=T}
-
-# Simulate from model I1nb
-
-# Simulation study spatial Negbin model.
-# First set random seed and the number of simulations
-set.seed(12345)
-NSim <- 1000
-
-# Carry out the simulation
-Sim <- inla.posterior.sample(n = NSim, result = I1nb)
-
-# Now we have 1000 simulated betas and also 1000 spatial fields w 
-# Use these to calculate 1000 times the expected values mu,
-# and simulate count data from these using rpois
-
-# X matrix
-#Xm      <- model.matrix(~BreedingD.std + Rain.std, data = cpue_subset)
-Xm <- model.matrix(~  fYear + fSurvey +  surface  ,  data = cpue_subset)
-
-# Create space to store the information
-N    <- nrow(cpue_subset)
-Ysim <- matrix(nrow = N, ncol = NSim)
-mu.i <- matrix(nrow = N, ncol = NSim)
-Xm   <- as.matrix(Xm)
-Am   <- as.matrix(A1)
-
-# We are calculating a Fixed part (X * beta) and also the random part (A * w)
-for (i in 1: NSim){
-  Betas    <- Sim[[i]]$latent[c(987, 988, 989)]
-  wk       <- Sim[[i]]$latent[416:986]
-  eta      <- Xm %*% Betas + Am %*% wk
-  mu.i[,i] <- exp(eta)
-  Ysim[,i] <- rpois(n = nrow(OCW), lambda = mu.i[,i])
-}
-
-# Now we have 1,000 simulated count data sets from the model
-
-# And plot the results of the simulation study
-Z <- matrix(nrow = max(Ysim)+1, ncol = NSim)
-for (i in 1: NSim){
-	zi <- table(Ysim[,i])
-	I <- as.numeric(names(zi)) + 1
-	Z[I,i] <- zi
-}
-
-		
-```
-
