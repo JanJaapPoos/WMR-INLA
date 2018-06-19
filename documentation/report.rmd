@@ -46,7 +46,7 @@ The lengths are stored in mm and the CPUE is stored as number per hour. "Zero ha
 ```{r, eval=T, echo=TRUE}
 IBTS$NoPerHaul <- round(IBTS$CPUE_number_per_hour*(IBTS$HaulDur/60))
 
-IBTS <- within(IBTS, haulCode <-  paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
+IBTS <- within(IBTS, haulCode <-  paste0(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong))
 ```
 
 We have a similar but slightly different data set for BTS. Here, the "zero hauls" have lengthclass NA and the number per haul is NA. These observations are then set to zero, so that we have the same structure as in the IBTS data set. 
@@ -71,7 +71,7 @@ summary(BTS$surface)
 summary(BTS$HaulDur)
 
 #make haul code
-BTS <- within(BTS, haulCode <- paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
+BTS <- within(BTS, haulCode <- paste0(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong))
 ```
 
 The BTS and IBTS datasets need to be combined the two sets into one, using rbind() to combine them by rows. The datasets can only be combined if they have the same columns. The columns that are shared by the two data sets are found using intersect().
@@ -141,7 +141,7 @@ full_cpue <- transform(full_cpue, Survey=gsub("-","",Survey))
 
 We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will subset the data, and start our analysis from a fiven year. That year is stored in startyr.    
 ```{r, eval=TRUE, echo=TRUE}
-startyr <- 2013
+startyr <- 2015
 cpue_subset <- full_cpue[full_cpue$Year >= startyr,]
 ```
 
@@ -677,8 +677,6 @@ print(levelplot(zm ~ x * y |length,
 ```{r, eval=T, echo=T}
 # 5. Make a stack. 
 Xmatrix <- model.matrix(~  fYear + fSurvey + HaulDur,  data = cpue_subset)
-
-head(Xmatrix)
 X <- as.data.frame(Xmatrix[,-1])
 names(X) <- c(gsub("[:]",".",names(X)))
 head(X)
@@ -1005,7 +1003,7 @@ Next we want to simulate a number realizations and integrate over surface (per y
 # to simulate from the model. The output is stored in the Sim object.
 
 set.seed(1234)
-NSim <- 1000
+NSim <- 500
 Sim <- inla.posterior.sample(n = NSim, result = I1nb)
 ```
 
@@ -1038,6 +1036,8 @@ dimnames(linmat)[[1]] <- fixed
 
 Sim is thus an object that has ...
 
+length(wm.pm1km2[!is.na(wm.pm1km2)]) contains surface of grid
+
 ```{r, eval=T, echo=T}
 numbers <- matrix(NA, ncol=length( startyr:2017), nrow=NSim, dimnames=list("sim"=1:NSim,"year"=startyr:2017))
 
@@ -1051,80 +1051,20 @@ for (ii in startyr:2017){
     }
     # section below is for including spatial corr 
     wm.pm1km2  <- inla.mesh.project(wproj, wmat[,jj])
+    #only take non-NAs
+    wm.pm1km2 <- wm.pm1km2[!is.na(wm.pm1km2)]
     res <- exp(lin + wm.pm1km2 )
-    numbers[jj,as.character(ii)] <- sum(rres,na.rm=T)
-    
-    #use code below if only interested in fixed effects
-    #res <- exp(lin)
-    #numbers[jj,as.character(ii)] <-  res
+    numbers[jj,as.character(ii)] <- sum(rnbinom(n=length(res),mu=res,size=I1nb$summary.hyperpar$mean[1]))
   }
 }
-
-## Code in Alain Zuur course. Note that he has rpois
-
-for (i in 1: NSim){
-  Betas <- SimData[[i]]$latent[as.numeric(rownum)]
-  wk    <- SimData[[i]]$latent[2442:3633]
-  FixedPart   <- Xm %*% Betas
-  SpatialPart <- Am %*% wk
-  mu.i[,i]    <- exp(FixedPart + SpatialPart)
-  Ysim[,i]    <- rpois(n = nrow(LP), lambda = mu.i[,i])
-}
-table(Ysim[,1])
-table(Ysim[,2])
-table(Ysim[,3])
-
-# Don't try to understand all the fancy code below Just the principle is enough.
-
-# RUN FROM HERE.....
-Z <- matrix(nrow = max(Ysim)+1, ncol = NSim)
-for (i in 1: NSim){
-	zi <- table(Ysim[,i])
-	I <- as.numeric(names(zi)) + 1
-	Z[I,i] <- zi
-}
-
-par(mfrow = c(1,1), mar = c(5,5,2,2), cex.lab = 1.5)
-Z[is.na(Z)] <- 0
-Xi <- 0: max(Ysim)
-AverageTable <- rowSums(Z) / NSim
-
-AverageTable <- rowSums(Z) / NSim
-apply(Z, 1, mean)
-SD <- apply(Z, 1, sd)
-
-Zs <- table(LP$nSIE)
-nx <- length(Zs)
-NamesZ <- as.numeric(names(Zs))
-
-plot(x = Xi, y = AverageTable, type = "h", lwd = 5, xlab = "Simulated endemic richness values", ylab = "Frequencies", ylim = c(0, 250))
-		
-# Add SDs
-for (i in 1:nx){
-    segments(x0 = NamesZ[i], x1 = NamesZ[i], y0 = AverageTable[i], y1 = AverageTable[i] + SD[i],lwd = 15,col = 1)
-}
-		
-#And add the table for the observed data
-for (i in 1:nx){
-    segments(x0 = NamesZ[i] + 0.2, x1 = NamesZ[i] + 0.2, y0 = 0, y1 = Zs[i],	lwd = 2,	col = 2)
-}
-
-# The red bars represent the frequency table for the observed data. The black lines is
-# the average frequency table for the 1000 simulated data sets. They should hopefully 
-# match. If they do then the model simulates data that is comparable to the observed data.		
-
-# It is not perfect. We are predicting too many zeros, but not enough ones and twos.
-
-
-
 ```
 
-Number is the estimated number per km2 (minus the spatial effect)
+Number is the estimated number for the entire surface of the grid
 what are the conf bounds for numbers per year?
 
 ```{r, eval=T, echo=T}
 qnumbers <- apply(numbers,2, quantile,c(0.025,0.5,0.975))
-matplot(t(qnumbers), xlab="Years", ylab="Numbers (km-2)")
+matplot(t(qnumbers), xlab="Years", ylab="Population numbers")
 ```
 
 what are the average weights per year?
@@ -1142,17 +1082,15 @@ annualmnwt <- within(annualmnwt, mnwt <- wt/NoPerHaul)
 plot(mnwt~Year, data=annualmnwt, type="b")
 ```
 
-Multiply weights by numbers per km2 to get kg per km2
+Multiply weights by population numbers to get estimated population biomass. Divide by 1e6 to go from kg to 1000 tonnes. 
 
 ```{r, eval=T, echo=T}
-qwts <- annualmnwt[annualmnwt$Year >= startyr,]$mnwt * qnumbers
+qwts <- annualmnwt[annualmnwt$Year >= startyr,]$mnwt * qnumbers / 1e6
 ```
 
-Now that we have kg per km2 we need to multiply by surface of North Sea, and go from numbers to weights. For now we assume that total surface ==750000 km,but this is probably overestmitae for us because not everything is sampled. We shoudl use the mesh, which has sum of 0, but at least gives us proper surface. Divde by 1000 to go from kg to tonnes
 
 ```{r, eval=T, echo=T}
-qwtsNS <- (qwts * 750000)/1000
-matplot(t(qwtsNS), xlab="Years", ylab="Estimated Total Stock Weight (tonnes)")
+matplot(t(qwts), xlab="Years", ylab="Estimated Total Stock Weight (1000 tonnes)", las=1, ylim=c(0,max(qwts)))
 ```
 
 ## Including depth in the swept area estimation
@@ -1196,15 +1134,10 @@ fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde
 
 ```{r, eval=T, echo=T}
 INLA:::inla.dynload.workaround() 
-I1p <- inla(eval(fsp), family = "poisson", data=inla.stack.data(Stack1),
-           control.compute = list(dic = TRUE, waic = TRUE, openmp.strategy="large"),
-           control.predictor = list(A = inla.stack.A(Stack1)))
-
 I1nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
            control.compute = list(dic = TRUE, waic = TRUE, config=TRUE, openmp.strategy="large"),
            control.predictor = list(A = inla.stack.A(Stack1)))
 
-summary(I1p)
 summary(I1nb)
 
 ```
@@ -1281,47 +1214,6 @@ grid.arrange(p1,p2, ncol=2)
 
 # Simulate from model I1nb
 
-# Simulation study spatial Negbin model.
-# First set random seed and the number of simulations
-set.seed(12345)
-NSim <- 1000
-
-# Carry out the simulation
-Sim <- inla.posterior.sample(n = NSim, result = I1nb)
-
-# Now we have 1000 simulated betas and also 1000 spatial fields w 
-# Use these to calculate 1000 times the expected values mu,
-# and simulate count data from these using rpois
-
-# X matrix
-#Xm      <- model.matrix(~BreedingD.std + Rain.std, data = cpue_subset)
-Xm <- model.matrix(~  fYear + fSurvey +  surface  ,  data = cpue_subset)
-
-# Create space to store the information
-N    <- nrow(cpue_subset)
-Ysim <- matrix(nrow = N, ncol = NSim)
-mu.i <- matrix(nrow = N, ncol = NSim)
-Xm   <- as.matrix(Xm)
-Am   <- as.matrix(A1)
-
-# We are calculating a Fixed part (X * beta) and also the random part (A * w)
-for (i in 1: NSim){
-  Betas    <- Sim[[i]]$latent[c(987, 988, 989)]
-  wk       <- Sim[[i]]$latent[416:986]
-  eta      <- Xm %*% Betas + Am %*% wk
-  mu.i[,i] <- exp(eta)
-  Ysim[,i] <- rpois(n = nrow(OCW), lambda = mu.i[,i])
-}
-
-# Now we have 1,000 simulated count data sets from the model
-
-# And plot the results of the simulation study
-Z <- matrix(nrow = max(Ysim)+1, ncol = NSim)
-for (i in 1: NSim){
-	zi <- table(Ysim[,i])
-	I <- as.numeric(names(zi)) + 1
-	Z[I,i] <- zi
-}
 
 		
 ```
@@ -1332,12 +1224,12 @@ for (i in 1: NSim){
 ```{r, eval=TRUE, echo=TRUE}
 # 2. Define the weighting factors a_ik (also called the projector matrix).
 endyr <- max(cpue_subset$Year)
-t.mesh    <- inla.mesh.1d(loc = startyr:endyr)
+t.mesh <- inla.mesh.1d(loc = startyr:endyr)
 
-A1         <- inla.spde.make.A(mesh = mesh1a,
-                              loc   = Loc,
-                              group = cpue_subset$Year,
-                              group.mesh = t.mesh)
+A1     <- inla.spde.make.A(mesh = mesh1a,
+                          loc   = Loc,
+                          group = cpue_subset$Year,
+                     group.mesh = t.mesh)
 
 dim(A1)
 ```
