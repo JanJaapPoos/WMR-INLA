@@ -10,7 +10,7 @@ Most of the data we collect at sea is spatially and temporally correlated, such 
 
 The statistical package INLA has the advantage over other software in R that it can combine spatial, temporal, zero-inflated, random effects etc models all in one. It therefore is very powerful and may become your one-stop-to-go package. 
 
-This document shows some examples of analyzing survey data using INLA. The first model estimates the number of individuals per haul, taking account of the haul location (assuming spatial autocorrelation) and year (as a 'fixed effect'). Differences in counts as a result of the two surveys are accounted for by also having th survey as a fied effect. Subsequent models take lengths into account in determining the counts. In the final part, the counts are expressed per unit area, so population estimates can be made using a 'swept area' approach.    
+This document shows some examples of analyzing survey data using INLA. The first model estimates the number of individuals per haul, taking account of haul location (assuming spatial autocorrelation) and year (as a 'fixed effect'). Differences in counts as a result of the two surveys are accounted for by also having survey as a fixed effect. Subsequent models take lengths into account in determining the counts. In the final part, the counts are expressed per unit area, so population estimates can be made using a 'swept area' approach.    
 ## Preparing the R environment
 
 ```{r, eval=T, echo=FALSE}
@@ -147,12 +147,12 @@ cpue_subset <- full_cpue[full_cpue$Year >= startyr,]
 
 In this example we thus start from `r startyr`.  The earlier we start, the more information we will obtain from the analysis on the annual changes in the count data. However, including more data also means we require more memory to store the model, and wait longer for the model to run. If too much data is used in the inla model, so that more computer memory is required than you have available, the model will crash. Now we have `r  nrow(cpue_subset)` rows left in cpue_subset. We start with a very simple analysis where we do not take length into account, and only analyse numbers per haul. Hence we aggregate the counts per haul.
 
-```{r, eval=TRUE, echo=TRUE}
+```{r, eval=F, echo=TRUE}
 cpue_subset <- aggregate(NoPerHaul ~ haulCode + Survey +  Quarter + Ship + Gear  + HaulNo + Year + HaulDur + ShootLong + ShootLat +  Xkm + Ykm +  Depth, data= cpue_subset,FUN="sum")
 ```
 After the aggregation (now that the length information is removed) we have `r  nrow(cpue_subset)` rows in the data set. To give us a quick impression of the data we plot it in a map. The two surveys have different colors, red being the IBTS hauls and black being the BTS hauls. The size of the circles indicate the counts in each haul
 
-```{r, eval=TRUE, echo=TRUE, dpi=600}
+```{r, eval=F, echo=TRUE, dpi=600}
 par(mfrow=c(1,2))
 plot(cpue_subset$ShootLong,cpue_subset$ShootLat, 
      cex=0.1, 
@@ -170,7 +170,7 @@ Clearly the IBTS hauls cover a larger part of the North Sea, but the large catch
 
 We also plot a quick histogram of the counts, to give us an impression of the statistical distribution of the data.
 
-```{r, eval=TRUE, echo=TRUE}
+```{r, eval=F, echo=TRUE}
 par(mfrow=c(1,2))
 hist(cpue_subset[cpue_subset$Survey == "BTS",]$NoPerHaul, 200, xlab= "Number per haul", main="Counts per haul BTS")
 hist(cpue_subset[cpue_subset$Survey == "NSIBTS",]$NoPerHaul, 200, xlab= "Number per haul", main="Counts per haul IBTS")
@@ -182,19 +182,19 @@ The count data is clearly quite skewed, with lots of zeros and small values, and
 ## Making a spatial mesh for the data
 
 The UTM coordinates of the data set are combined into a Loc (location) dataset. That data set will be used later to generate spatial meshes for the data.   
-```{r, eval=TRUE, echo=TRUE}
+```{r, eval=F, echo=TRUE}
 Loc <- cbind(cpue_subset$Xkm , cpue_subset$Ykm )
 ```
 
 Next we need a mesh for the spatial data. Because we do not want our spatial correlations to pass landmasses (e.g. Denmark) we first make a nonconvex hull of the data points using inla.nonconvex.hull(). This convex hull is used as a boundary for making a 2d mesh. The generation of the actual mesh is done using inla.mesh.2d(). That function takes several arguments, incuding "cutoff" and "max.edge". These arguments specify how fine the final mesh will be. Finer meshes will be able to capture smaller scale spatial correlations, but require more comuting time in the inla model.
 
-```{r, eval=TRUE, echo=TRUE}
+```{r, eval=F, echo=TRUE}
 ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
 mesh1a   <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(30))
 ```
 
 As an alternative to using the nonconvex hull function to generate a boundary,, we can also take the shapefile of the North Seaas the boundary of the mesh, which makes prediction in the future easier, as we know no record can be found outside the North Sea area (give or take evolution). We first load the ICES shapefiles which were downloaded from http://gis.ices.dk/sf/. We load this shapefiles, merge layers together, transform to UTM, convert UTM to km rather than meters and finally create a mesh. 
-```{r, eval=TRUE, echo=TRUE}
+```{r, eval=F, echo=TRUE}
 ICESareas <- readShapePoly(file.path(path,"ICES_Areas_20160601_dense"))
 NorthSea  <- subset(ICESareas,SubArea==4)
 NorthSea  <- gUnionCascaded(NorthSea)
@@ -209,7 +209,7 @@ mesh1b      <- inla.mesh.2d(boundary=NS.border, cutoff=3,max.edge=c(30))
 
 The meshes can be plotted using the plot() function on the mesh object. Once the mesh is plotted, the locations of the samples (stored in the Loc object) can be overlayed using points(). Below, the two meshes are plotted side-by-side.
 
-```{r, eval=TRUE, echo=TRUE, dpi=600}
+```{r, eval=F, echo=TRUE, dpi=600}
 par(mfrow=c(1,2))
 plot(mesh1a)
 points(Loc, col = 1, pch = 16, cex = 0.3)
@@ -220,13 +220,13 @@ points(Loc, col = 1, pch = 16, cex = 0.3)
 ## Making the projector matrix and the spde 
 
 Once the 2d mesh is made we construct a observation/prediction weight matrix for the model. This is also called the "projector matrix".
-```{r, eval=TRUE, echo=TRUE}
+```{r, eval=F, echo=TRUE}
 # 2. Define the weighting factors a_ik (also called the projector matrix).
 A1      <- inla.spde.make.A(mesh  = mesh1a, loc   = Loc)
 dim(A1)
 ```
 The first dimension of the projector matrix has the size of the number of observations (here `r dim(A1)[1]`), and the second dimension of the projector matrix is the number of nodes in the mesh (here `r dim(A1)[2]`).
-```{r, eval=TRUE, echo=TRUE}
+```{r, eval=F, echo=TRUE}
 # 3. Define the spde
 spde  <- inla.spde2.matern(mesh1a)
 
@@ -238,13 +238,13 @@ w.st <- inla.spde.make.index('w', n.spde = spde$n.spde)
 The stack allows INLA to build models with complex linear predictors. Here have a SPDE model combined with covariate fixed effects and an intercept at n hauls.
 
 Before making the stack we need to convert all fixed effects that are factors in the INLA model.
-```{r, eval=T, echo=T}
+```{r, eval=F, echo=T}
 cpue_subset$fYear   <- as.factor(cpue_subset$Year)
 cpue_subset$fSurvey <- as.factor(cpue_subset$Survey)
 ```
 
 Note that in code below the names in the model matrix should not contain any special characters! This is why we renamed the "NS-IBTS" survey to "NSIBTS"
-```{r, eval=T, echo=T}
+```{r, eval=F, echo=T}
 # 5. Make a stack. In this process we tell INLA at which points on the mesh we sampled the response variable and the covariates. 
 Xmatrix <- model.matrix(~ fYear + fSurvey +  HaulDur,  data = cpue_subset)
 head(Xmatrix)
@@ -252,7 +252,7 @@ head(Xmatrix)
 
 This Xmatrix contains the model matrix with the fixed effects, including the intercept (The column for the intercept is named "(Intercept)", and it is 1 for all observations). However, in the next step the intercept is removed from the model matrix. The intercept is then included when making the stack, and named "Intercept" (without brackets).
 
-```{r, eval=T, echo=T}
+```{r, eval=F, echo=T}
 X <- as.data.frame(Xmatrix[,-1])
 names(X) <- c(gsub("[:]",".",names(X)))
 head(X)
@@ -274,7 +274,7 @@ The model formula used in the inla model is generated from the names of the mode
 
 Subsequently, two inla models are run, one assuming that the data are Poisson distributed, and another model assuming that the data are negative binomial distributed.
 
-```{r, eval=T, results='hide', echo=T, message=FALSE, warning=FALSE}
+```{r, eval=F, results='hide', echo=T, message=FALSE, warning=FALSE}
 fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde)"),collapse =" + ")))
 
 INLA:::inla.dynload.workaround() 
@@ -293,21 +293,17 @@ I1zip <- inla(eval(fsp), family = "zeroinflatedpoisson1", data=inla.stack.data(S
 I1zinb <- inla(eval(fsp), family = "zeroinflatednbinomial1", data=inla.stack.data(Stack1),
            control.compute = list(dic = TRUE, waic = TRUE, config=TRUE),
            control.predictor = list(A = inla.stack.A(Stack1)))
-
-
 ```
 Once the INLA models are run, a summary can be printed for the two models. This summary contains much of the relevant information for the models. Below is the example for the Poisson model. The summary also  contains the WAIC criterion. WAIC works just like AIC in that the model with the lowest WAIC should be selected.
 
-```{r, eval=T, echo=T}
+```{r, eval=F, echo=T}
 summary(I1p)
-
 summary(I1p)$waic$waic
-
 ```
 
 The Poisson model this has a WAIC value of `r summary(I1p)$waic$waic`. We can make a simple table to compare the WAIC values of the different models.
 
-```{r, eval=T, echo=T}
+```{r, eval=F, echo=T}
 dic2  <- c(I1p$dic$dic, I1nb$dic$dic, I1zip$dic$dic, I1zinb$dic$dic)
 waic2 <- c(I1p$waic$waic, I1nb$waic$waic, I1zip$waic$waic, I1zinb$waic$waic)
 Z     <- cbind(dic2, waic2)
@@ -316,13 +312,12 @@ Z
 ```
 
 The negative binomial model has the lowest DIC and WAIC. Let's see the summary of this model.  
-```{r, eval=T, echo=T}
+```{r, eval=F, echo=T}
 summary(I1nb)
-
 ```
 Plot the histograms of observations and fits for all models. 
 
-```{r, eval=T, echo=T}
+```{r, eval=F, echo=T, dpi=600}
 idx <- inla.stack.index(Stack1, tag= 'Fit')$data
 
 par(mfrow=c(2,2))
@@ -343,13 +338,9 @@ breaks <- c(as.numeric(names(table(cpue_subset$NoPerHaul))),1000)
 points(y=log(table(cut(I1zinb$summary.fitted.values[idx,"mean"],breaks=breaks))),x=pos[,1],col=2,pch=19)
 ```
 
-```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
-#########################################
+```{r, eval=F, echo=T,  dpi=600}
 # Spatial info
-SpatField.w <- inla.spde2.result(inla = I1nb,
-                                 name = "w",
-                                 spde = spde,
-                                 do.transfer = TRUE)
+SpatField.w <- inla.spde2.result(inla = I1nb, name = "w", spde = spde, do.transfer = TRUE)
 
 Kappa <- inla.emarginal(function(x) x, 
                         SpatField.w$marginals.kappa[[1]] )
@@ -360,9 +351,7 @@ Sigma_u <- inla.emarginal(function(x) sqrt(x),
 range <- inla.emarginal(function(x) x, 
                         SpatField.w$marginals.range.nominal[[1]] )
 
-Kappa
-Sigma_u
-range       #Distance at which the correlation diminishes
+Kappa; Sigma_u; range       #Distance at which the correlation diminishes
 
 # Show correlation structure
 LocMesh <- mesh1a$loc[,1:2]
@@ -377,23 +366,17 @@ Cor.M <- (Kappa * d.vec) * besselK(Kappa * d.vec, 1)
 Cor.M[1] <- 1
 
 # Which we plot here:
-par(mfrow=c(1,1), mar = c(5,5,2,2))
-plot(x = d.vec, 
-     y = Cor.M, 
-     pch = 16, 
+par(mfrow=c(1,1))
+plot(x = d.vec, y = Cor.M, 
      type = "l", 
-     cex.lab = 1.5,
      xlab = "Distance", 
-     ylab = "Correlation",
-     xlim = c(0, 400))
+     ylab = "Correlation")
 abline(h = 0.1, lty = 2)
-
-
 ```
 
 
 
-```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
+```{r, eval=F, echo=F, fig.width=8, fig.height=4, dpi=600}
 wproj <- inla.mesh.projector(mesh1a, xlim = range(Loc[,1]), ylim = range(Loc[,2])) 
 
 wm.pm100100  <- inla.mesh.project(wproj, I1nb$summary.random$w$mean)
@@ -439,9 +422,6 @@ p2 <- levelplot(zsd ~ x * y,
 grid.arrange(p1,p2, ncol=2)
   
 ```
-
-
-
 
 Wat happens here?
 
@@ -552,21 +532,21 @@ knots
 ```
 
 Using the `r length(knots)` knots as locations, we make a 1 dimensional mesh.   
-```{r, eval=T, echo=T}
+```{r, eval=F, echo=T}
   
 # One-dimensional mesh for length class. See the time series module
 mesh.t <- inla.mesh.1d(loc = knots)
 ```
 
 In this mesh.t object, the dimensions can be checked using mesh.t$loc (for the locations) and mesh.t$n (the number of locations). The code below confirms that there are `r mesh.t$n` locations, and those are at the values of the knots object. 
-```{r, eval=T, echo=T}
+```{r, eval=F, echo=T}
 mesh.t$n
 mesh.t$loc
 ```
  
 Now that there is a 1 dimensional mesh for the lengths, we use it to construct a observation/prediction weight matrix ("projector matrix") based on the spatial mesh that we already created earlier (mesh1) and our new mesh for the lengths. The lengths are used in the "group model". The new projector matrix is names A2 to distinguish it from the projector matrix of the previous model.
 
-```{r, eval=T, echo=T}
+```{r, eval=F, echo=T}
 # 2. Define the weighting factors a_ik (projector matrix).
 NGroups <- length(knots) 
 A2      <- inla.spde.make.A(mesh  = mesh2a,
@@ -581,7 +561,7 @@ spde  <- inla.spde2.matern(mesh2a)
 
 We need to make an inla.spde model object for a Matern model, but we still have that available from the model without size structure. That object was named "spde". We use it to make a list of named index vectors for the SPDE model. Note that the command for making the list of index vectors now includes an argument for the groups. 
 
-```{r, eval=T, echo=T}
+```{r, eval=F, echo=T}
 w.st <- inla.spde.make.index('w', 
                              n.spde = spde$n.spde, 
                              n.group = NGroups)
@@ -589,14 +569,14 @@ w.st <- inla.spde.make.index('w',
 
 
 Before making the stack we need to convert all fixed effects that are factors in the INLA model.
-```{r, eval=T, echo=T}
+```{r, eval=F, echo=T}
 cpue_subset$fYear   <- as.factor(cpue_subset$Year)
 cpue_subset$fSurvey <- as.factor(cpue_subset$Survey)
 ```
 
 Next we make a new stack. For this we need a model matrix. Although the fixed effects are the same as in the previous model, we still need to make a new model matrix because the data now include the length structure. 
 
-```{r, eval=T, echo=T}
+```{r, eval=F, echo=T}
 # 5. Make a stack. 
 Xmatrix <- model.matrix(~  fYear + fSurvey +  HaulDur,  data = cpue_subset)
 
@@ -606,7 +586,7 @@ This Xmatrix contains the model matrix with the fixed effects, including the int
  "(Intercept)", and it is 1 for all observations). However, in the next step the intercept is removed from the model matrix.
  The intercept is then included when making the stack, and named "Intercept" (without brackets). 
 
-```{r, eval=T, echo=T}
+```{r, eval=F, echo=T}
 X <- as.data.frame(Xmatrix[,-1])
 names(X) <- c(gsub("[:]",".",names(X)))
 head(X)
@@ -674,7 +654,7 @@ print(levelplot(zm ~ x * y |length,
 
 ## Including length in the survey catchability
 
-```{r, eval=T, echo=T}
+```{r, eval=F, echo=T}
 # 5. Make a stack. 
 Xmatrix <- model.matrix(~  fYear + fSurvey + HaulDur,  data = cpue_subset)
 X <- as.data.frame(Xmatrix[,-1])
@@ -714,7 +694,7 @@ We still have the IBTS data available in the cpue_IBTS object, but that does not
 ```{r, eval=T, echo=T}
 IBTSHH <- read.csv(file.path(path,"Exchange Data_2017-07-14 09_26_25.csv"), stringsAsFactors = F)
 
-IBTSHH <- within(IBTSHH, haulCode <-  paste(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong, sep="_"))
+IBTSHH <- within(IBTSHH, haulCode <-  paste0(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong))
 
 IBTSHH[IBTSHH$DoorSpread == -9,]$DoorSpread <- NA
 IBTSHH[IBTSHH$Distance == -9,]$Distance <- NA
@@ -824,7 +804,7 @@ The INLA code does not like special characters in some of the variable names, li
 full_cpue <- transform(full_cpue, Survey=gsub("-","",Survey))
 ```
 
-## Subsetting and length aggregation
+### Subsetting and length aggregation
 
 We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will again start from startyr `r startyr`.    
 ```{r, eval=TRUE, echo=TRUE}
@@ -839,7 +819,7 @@ cpue_subset <- aggregate(NoPerHaul ~ haulCode + Survey +  Quarter + Ship + Gear 
 
 We do not plot the exploratory data analayses again. As a reminder of the size of the dataset: the lenght aggregation has reduced it to `r  nrow(cpue_subset)` rows. This is the number of unique hauls in our data, which now spans years `r min(cpue_subset$Year)` to `r max(cpue_subset$Year)`.
 
-## Making a spatial mesh for the data
+### Making a spatial mesh for the data
 
 The UTM coordinates of the data set are combined into a Loc (location) dataset. That data set will be used later to generate spatial meshes for the data.   
 ```{r, eval=TRUE, echo=TRUE}
@@ -858,7 +838,7 @@ points(Loc, col = 1, pch = 16, cex = 0.3)
 
 The alternative from the first examples can of course also be used.
 
-## Making the projector matrix and the spde 
+### Making the projector matrix and the spde 
 
 Once the 2d mesh is made we construct a observation/prediction weight matrix for the model. This is also called the "projector matrix".
 ```{r, eval=TRUE, echo=TRUE}
@@ -874,7 +854,7 @@ spde  <- inla.spde2.matern(mesh1a)
 w.st <- inla.spde.make.index('w', n.spde = spde$n.spde)
 ```
 
-## Making the stack
+### Making the stack
 
 The stack allows INLA to build models with complex linear predictors. Here have a SPDE model combined with covariate fixed effects and an intercept at n hauls.
 
@@ -916,7 +896,7 @@ Stack1 <- inla.stack(
 
 Note that N is the number of rows (`r N`) in the data set, and thus equal to the first dimension of A1. 
 
-## Making the model formula and running the INLA model
+### Making the model formula and running the INLA model
 
 The model formula used in the inla model is generated from the names of the model matrix, combined with the intercept term and the spatial correlation model ("f(w, model=spde)").
 
