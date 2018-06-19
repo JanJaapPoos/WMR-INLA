@@ -58,11 +58,11 @@ BTS[is.na(BTS$LngtClass),]$NoPerHaul <- 0
 BTS[is.na(BTS$LngtClass),]$LngtClass <- 0
 ```
 
-Which vessels and years are present in BTS set? Note that there are some years in the BTS ISIS where the zero hauls are not added because no specimens were caught in that year (e.g. 2010). That shoul dbe fixed at ICES. Alternatively we could download the data with a more abundant species and make our own zero hauls.
+Which vessels and years are present in BTS set? Note that there are some years in the BTS ISIS where the zero hauls are not added because no specimens were caught in that year (e.g. 2010). That should be fixed at ICES. Alternatively we could download the data with a more abundant species and make our own zero hauls.
 ```{r, eval=TRUE, echo=TRUE}
 table(BTS$Ship, BTS$Year)
 ```
-The BTS swept area estimate is rounded, and thus not very useful. We recalculate it: the distance and beam width are in m, so the surface is in m2, and divided by 1e+06 to get km2
+The BTS swept area estimate is rounded, and thus not very useful. That's why we will recalculate it: the distance and beam width are in m, so the surface is in m2, and divided by 1e+06 to get km2
 ```{r, eval=TRUE, echo=TRUE}
 # there are some negative distances. We make those  NA, and infer their surface later 
 BTS[!is.na(BTS$Distance) & BTS$Distance < 0,]$Distance <- NA
