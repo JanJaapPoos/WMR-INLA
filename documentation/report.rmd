@@ -116,11 +116,16 @@ In addition, there are some observations that are highly unlikely: For instance 
 
 
 ```{r, eval=TRUE, echo=TRUE, dpi=600}
-hist(full_cpue[full_cpue$NoPerHaul >0,]$LngtClass, breaks=100, xlab="Length (mm)", main="Observed lengths", ylim=c(0,2400))
+par(mfrow=c(1,2))
+hist(full_cpue[full_cpue$Quarter==1 & full_cpue$NoPerHaul >0,]$LngtClass, breaks=100, xlab="Length (mm)", main="Observed lengths q1",xlim=c(0, max(full_cpue$LngtClass)), ylim=c(0,1500))
 abline(v=990, col="red")
+grid()
+lines(aggregate(NoPerHaul~LngtClass, data=full_cpue[full_cpue$Quarter==1 & full_cpue$NoPerHaul >0,], FUN="sum"))
 
-lines(aggregate(NoPerHaul~LngtClass, data=full_cpue[full_cpue$NoPerHaul >0,], FUN="sum"))
-
+hist(full_cpue[full_cpue$Quarter==3 & full_cpue$NoPerHaul >0,]$LngtClass, breaks=100, xlab="Length (mm)", main="Observed lengths q3",xlim=c(0, max(full_cpue$LngtClass)), ylim=c(0,1500))
+abline(v=990, col="red")
+grid()
+lines(aggregate(NoPerHaul~LngtClass, data=full_cpue[full_cpue$Quarter==3 & full_cpue$NoPerHaul >0,], FUN="sum"))
 ```
 
 We remove this observation from the data. Note that when the length information is included in the analyses a further selection is made for the lengths.
@@ -148,7 +153,7 @@ full_cpue <- transform(full_cpue, Survey=gsub("-","",Survey))
 
 We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will subset the data, and start our analysis from a fiven year. That year is stored in startyr.    
 ```{r, eval=TRUE, echo=TRUE}
-startyr <- 2014
+startyr <- 1977
 cpue_subset <- full_cpue[full_cpue$Year >= startyr,]
 ```
 
@@ -163,13 +168,13 @@ After the aggregation (now that the length information is removed) we have `r  n
 par(mfrow=c(1,2))
 plot(cpue_subset$ShootLong,cpue_subset$ShootLat, 
      cex=0.1, 
-     col=as.numeric(as.factor(cpue_subset$Survey)),
+     col=c('black', 'red','blue')[as.factor(paste(cpue_subset$Survey, cpue_subset$Quarter))],
      xlab="Longitude", ylab="Lattitude", main="Location of all hauls" )
 map("world",add=T)
 
 plot(cpue_subset$ShootLong,cpue_subset$ShootLat, 
-     cex=(cpue_subset$NoPerHaul)/10, 
-     col=as.numeric(as.factor(cpue_subset$Survey)),
+     cex=log(cpue_subset$NoPerHaul)/5, 
+     col=c('black', 'red','blue')[as.factor(paste(cpue_subset$Survey, cpue_subset$Quarter))],
      xlab="Longitude", ylab="Lattitude",  main="Counts per hauls" )
 map("world",add=T)
 ```
@@ -177,10 +182,11 @@ Clearly the IBTS hauls cover a larger part of the North Sea, but the large catch
 
 We also plot a quick histogram of the counts, to give us an impression of the statistical distribution of the data.
 
-```{r, eval=T, echo=TRUE}
-par(mfrow=c(1,2))
+```{r, eval=T, echo=TRUE, dpi=600}
+par(mfrow=c(1,3))
 hist(cpue_subset[cpue_subset$Survey == "BTS",]$NoPerHaul, 200, xlab= "Number per haul", main="Counts per haul BTS")
-hist(cpue_subset[cpue_subset$Survey == "NSIBTS",]$NoPerHaul, 200, xlab= "Number per haul", main="Counts per haul IBTS")
+hist(cpue_subset[cpue_subset$Survey == "NSIBTS" &cpue_subset$Quarter == 1,]$NoPerHaul, 200, xlab= "Number per haul", main="Counts per haul IBTS q1")
+hist(cpue_subset[cpue_subset$Survey == "NSIBTS" &cpue_subset$Quarter == 3,]$NoPerHaul, 200, xlab= "Number per haul", main="Counts per haul IBTS q3")
 
 ```
 
@@ -707,16 +713,19 @@ IBTSHH[IBTSHH$Distance == -9,]$Distance <- NA
 IBTSHH[IBTSHH$WingSpread == -9,]$WingSpread <- NA
 ``` 
 
-Next, we plot a histogram of haul duration, and a scatterplot of doorspread versus wingspread to get a look at the data. Clearly, haul duration is stored in minutes, with most of the hausl being either 30 minutes or 1 hour. Hauls longer than 80 minute are removed. Because thes contain a large proportion of outliers with respect to e.g. distance. This step removes `r sum(IBTSHH$HaulDur > 80)` from the `r nrow(IBTSHH)` hauls.
+Next, we plot a histogram of haul duration, a scatterplot of distance versus haul duration, and a scatterplot of doorspread versus wingspread to get a look at the data. Clearly, haul duration is stored in minutes, with most of the hauls being either 30 minutes or 1 hour. Hauls longer than 80 minute are removed because these contain a large proportion of outliers with respect to e.g. distance. This step removes `r sum(IBTSHH$HaulDur > 80)` from the `r nrow(IBTSHH)` hauls.
 
 The wing spread and doorspread are stored in meters, with wing spreads being in the range `r range(IBTSHH$WingSpread, na.rm=T)` meters and doorspread being in the range  `r range(IBTSHH$DoorSpread, na.rm=T)` meters. There is one clear outlier 
 
 ```{r, eval=TRUE, echo=TRUE, dpi=600}
-par(mfrow=c(1,2))
+par(mfrow=c(1,3))
 hist(IBTSHH$HaulDur,120, xlim=c(0,120), main= "", xlab="Haul duration (minutes)")
 abline(v=80, lty=2)
 IBTSHH <- IBTSHH[IBTSHH$HaulDur <= 80,]
-plot(IBTSHH$WingSpread,IBTSHH$DoorSpread, xlab="Wingspread (m)", ylab= "Doorspread (m)")
+
+plot(IBTSHH$HaulDur,IBTSHH$Distance, pch=20, xlab="Haul duration (minutes)", ylab= "Distance (m)")
+
+plot(IBTSHH$WingSpread,IBTSHH$DoorSpread, pch=20, xlab="Wingspread (m)", ylab= "Doorspread (m)")
 abline(a=0,b=1, lty=2)
 ```
 
@@ -823,6 +832,37 @@ The earlier we start, the more information we will obtain from the analysis on t
 cpue_subset <- aggregate(NoPerHaul ~ haulCode + Survey +  Quarter + Ship + Gear + HaulNo + Year + HaulDur + surface + ShootLong + ShootLat +  Xkm + Ykm +  Depth, data= cpue_subset,FUN="sum")
 ```
 
+Later we try to also add depth to the model and we prepare for this now. We have depth for many but not all hauls in the full cpue set. The maximum fishing depth for IBTS standard stations in the North Sea is 200 m. and in Division IIIa 250 m. However, there are some hauls taken at depths deeper than 300 m. and we exclude those. The missing values are indicated by a value of -9, and these have to be transformed into NAs.
+
+```{r, eval=T, echo=T}
+nrow(cpue_subset)
+summary(cpue_subset$Depth)
+cpue_subset <- cpue_subset[cpue_subset$Depth < 300,]
+cpue_subset[cpue_subset$Depth ==-9,]$Depth <- NA
+summary(cpue_subset$Depth)
+``` 
+
+Given that the depth for a given location does not change much over the years, we use a generalized additive model to model a depth map, and to predict depths for those hauls where depth is missing. Using the depth in INLA requires that the depth is binned. We use 2 m depth bins. 
+
+```{r, eval=T, echo=T}
+depthmodel <- gam(Depth~te( ShootLong,ShootLat,k=17), data=cpue_subset)
+summary(depthmodel)
+gam.check(depthmodel)
+plot(depthmodel)
+cpue_subset[is.na(cpue_subset$Depth),]$Depth <-predict(depthmodel,newdata= cpue_subset[is.na(cpue_subset$Depth),])
+cpue_subset$Depth <- round(cpue_subset$Depth/2,0)*2
+```
+Simple way of plotting resulting depth model (at observations)
+
+```{r, eval=T, echo=T, dpi=600}
+plot(cpue_subset[!is.na(cpue_subset$ShootLon),]$ShootLon,
+     cpue_subset[!is.na(cpue_subset$ShootLon),]$ShootLat,
+     pch=20, col=rev(tim.colors(15, alpha = 1))[cut(depthmodel$fitted.values,20)], 
+     xlab= "Longitude", ylab="latitude", las=1)
+map("world",add=T)
+
+``` 
+
 We do not plot the exploratory data analayses again. As a reminder of the size of the dataset: the lenght aggregation has reduced it to `r  nrow(cpue_subset)` rows. This is the number of unique hauls in our data, which now spans years `r min(cpue_subset$Year)` to `r max(cpue_subset$Year)`.
 
 ### Making a spatial mesh for the data
@@ -834,7 +874,7 @@ Loc <- cbind(cpue_subset$Xkm, cpue_subset$Ykm )
 
 Next we need a mesh for the spatial data. Because we do not want our spatial correlations to pass landmasses (e.g. Denmark) we first make a nonconvex hull of the data points using inla.nonconvex.hull(). This convex hull is used as a boundary for making a 2d mesh. The generation of the actual mesh is done using inla.mesh.2d(). That function takes several arguments, incuding "cutoff" and "max.edge". These arguments specify how fine the final mesh will be. Finer meshes will be able to capture smaller scale spatial correlations, but require more comuting time in the inla model.
 
-```{r, eval=TRUE, echo=TRUE, dpi=600}
+```{r, eval=TRUE, echo=TRUE, dpi=1200}
 par(mfrow=c(1,1))
 ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
 mesh1a   <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(30))
@@ -1081,26 +1121,6 @@ matplot(t(qwts), xlab="Years", ylab="Estimated Total Stock Weight (1000 tonnes)"
 
 ## Including depth in the swept area estimation
 
-We have depth for many but not all hauls in the full cpue set. The maximum fishing depth for IBTS standard stations in the North Sea is 200 m. and in Division IIIa 250 m. However, there are some hauls taken at depths deeper than 300 m. and we exclude those. The missing values are indicated by a value of -9, and these have to be transformed into NAs.
-
-```{r, eval=T, echo=T}
-nrow(cpue_subset)
-summary(cpue_subset$Depth)
-cpue_subset <- cpue_subset[cpue_subset$Depth < 300,]
-cpue_subset[cpue_subset$Depth ==-9,]$Depth <- NA
-summary(cpue_subset$Depth)
-``` 
-
-Given that the depth for a given location does not change much over the years, we use a generalized additive model to model a depth map, and to predict depths for those hauls where depth is missing. Using the depth in INLA requires that the depth is binned. We use 2 m depth bins. 
-
-```{r, eval=T, echo=T}
-depthmodel <- gam(Depth~te( ShootLong,ShootLat,k=17), data=cpue_subset)
-summary(depthmodel)
-gam.check(depthmodel)
-plot(depthmodel)
-cpue_subset[is.na(cpue_subset$Depth),]$Depth <-predict(depthmodel,newdata= cpue_subset[is.na(cpue_subset$Depth),])
-cpue_subset$Depth <- round(cpue_subset$Depth/2,0)*2
-```
 
 ```{r, eval=T, echo=T}
 N <- nrow(cpue_subset)
@@ -1275,7 +1295,7 @@ rug(cpue_subset$Depth)
 ```
 
 
-```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
+```{r, eval=F, echo=T, fig.width=8, fig.height=4, dpi=600}
 # we want to make cells of 1 by 1 km. Let's do this first 
 xl <- range(Loc[,1])
 xres <- round(xl[2]-xl[1])
@@ -1287,7 +1307,7 @@ wproj <- inla.mesh.projector(mesh1a, dims=c(xres,yres), xlim = xl, ylim = yl)
 grid <- expand.grid(year=startyr:endyr, x = wproj$x, y = wproj$y,zm=NA)
 
 for (i in startyr:endyr){
-    w.pm1km2 <- inla.mesh.project(wproj,w[w.st$w.group==which(i==Year)])
+    w.pm1km2 <- inla.mesh.project(wproj,w.st[w.st$w.group==which(i==Year)])
     grid[grid$length==i,]$zm <- as.vector(w.pm1km2)  
 }
 
