@@ -20,8 +20,8 @@ rm(list=ls())
 First, we need to set the path where the data is located and to load the relevant libraries. The inla package can be installed using install.packages("INLA", repos="https://inla.r-inla-download.org/R/stable"). We need the inla package, but also a number of packages for spatial analyses ('rgeos' and 'rgdal')  and for plotting the data and the results ('lattice', 'latticeExtra', 'grid','gridExtra','mapdata', and 'maptools').
 
 ```{r, eval=T, results="hide", echo=TRUE, message=FALSE, warning=FALSE}
-#path <- "~/WMR-INLA/data"
-path <- "d://WMR-INLA/data" 
+path <- "~/WMR-INLA/data"
+#path <- "d://WMR-INLA/data" 
 
 library(INLA); library(fields); 
 library(mgcv)
@@ -264,7 +264,7 @@ map("world",add=T)
 
 We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will subset the data, and start our analysis from a fiven year. That year is stored in startyr.    
 ```{r, eval=TRUE, echo=TRUE}
-startyr <- 2015
+startyr <- 2005
 cpue_subset <- full_cpue[full_cpue$Year >= startyr,]
 ```
 
@@ -315,7 +315,7 @@ Next we need a mesh for the spatial data. Because we do not want our spatial cor
 
 ```{r, eval=T, echo=TRUE}
 ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
-mesh1a   <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(30))
+mesh1a   <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(40))
 ```
 
 As an alternative to using the nonconvex hull function to generate a boundary,, we can also take the shapefile of the North Seaas the boundary of the mesh, which makes prediction in the future easier, as we know no record can be found outside the North Sea area (give or take evolution). We first load the ICES shapefiles which were downloaded from http://gis.ices.dk/sf/. We load this shapefiles, merge layers together, transform to UTM, convert UTM to km rather than meters and finally create a mesh. 
@@ -329,7 +329,7 @@ NorthSeaUTM <- spTransform(NorthSea,CRS("+proj=utm +zone=31"))
 NS.border <- inla.sp2segment(NorthSeaUTM)
 NS.border$loc <- NS.border$loc/1000
 
-mesh1b      <- inla.mesh.2d(boundary=NS.border, cutoff=3,max.edge=c(30))
+mesh1b      <- inla.mesh.2d(boundary=NS.border, cutoff=3,max.edge=c(40))
 ```
 
 The meshes can be plotted using the plot() function on the mesh object. Once the mesh is plotted, the locations of the samples (stored in the Loc object) can be overlayed using points(). Below, the two meshes are plotted side-by-side.
@@ -1107,7 +1107,7 @@ Next we need a mesh for the spatial data. Because we do not want our spatial cor
 ```{r, eval=TRUE, echo=TRUE}
 
 ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
-mesh2a    <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(30))
+mesh2a    <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(40))
 plot(mesh2a)
 points(Loc, col = 1, pch = 16, cex = 0.5)
 ```
