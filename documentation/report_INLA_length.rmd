@@ -1,0 +1,240 @@
+# Distribution map using survey data
+## An example of Starry ray in the North Sea, using INLA
+#### Authors: Geert Aarts, Niels Hintzen, Harriet van Overzee, Jurgen Batsleer, Jan Jaap Poos, Ingrid Tulp
+
+```{r set-options, echo=FALSE, cache=FALSE}
+options(width = 120)
+rm(list=ls())
+```
+
+Set correct path for data, load libraries and load the full_cpue data set 
+
+First, we need to set the path where the data is located and to load the relevant libraries. The inla package can be installed using install.packages("INLA", repos="https://inla.r-inla-download.org/R/stable"). We need the inla package, but also a number of packages for spatial analyses ('rgeos' and 'rgdal')  and for plotting the data and the results ('lattice', 'latticeExtra', 'grid','gridExtra','mapdata', and 'maptools').
+
+```{r, eval=T, results="hide", echo=TRUE, message=FALSE, warning=FALSE}
+path <- "~/WMR-INLA/data"
+#path <- "d://WMR-INLA/data" 
+
+library(INLA); library(fields); 
+library(mgcv)
+library(lattice); library(latticeExtra); library(grid); library(gridExtra);
+library(rgdal); library(rgeos); 
+library(mapdata); library(maptools)
+
+load(file.path(path,"survey_data.Rdata"))
+```
+
+## Including length in the analysis
+
+Owing to ontogenetic niche shifts we expect that the spatial distribution of small indivduals is different from the spatial distribution of large indivuals. Hence we want to include a length component in the spatial distribution of the counts.
+
+First we need to make a new subset of the data that includes the length information (and leaving out the aggregation step in our earlier analysis). We use the same starting year as was done for the previous analysis: `r startyr`.
+
+```{r, eval=T, echo=TRUE}
+# make selection of  fullset.
+startyr <- 2005
+cpue_subset <- full_cpue[full_cpue$Year >= startyr,]
+```
+
+Let's make 5 cm classes instead of 1 cm classes. This reduces the number of observations. We use round to achieve this. Remember that the units of the length measurements is mm. 
+
+Once we have 5 cm lenght classes, we need aggregate() to sum the numbers per haul within our new length bins. Becaus we need the other info in the data set as well we include all variables in the aggregate. 
+
+```{r, eval=TRUE, echo=TRUE}
+cpue_subset$LngtClass <- round(cpue_subset$LngtClass/50)*50
+
+cpue_subset <- aggregate(NoPerHaul~ LngtClass + haulCode + Survey + Quarter + Ship + Gear  + HaulNo + Year + HaulDur + ShootLong +
+ShootLat + Xkm + Ykm +  Depth, data= cpue_subset,FUN="sum")
+```
+
+
+Below, we inspect the length range of observations. There are no individuals with lengths over 600 mm observed. Hence, we remove those lengthclasses. If there are too many subsequent lenght classes with only zeros, the model will fail, giving a warning that one of the eigenvalues is negative.  
+
+```{r, eval=T, echo=T}
+aggregate(NoPerHaul~LngtClass, data=cpue_subset, FUN= "sum")
+cpue_subset <- cpue_subset[cpue_subset$LngtClass >   0,]
+cpue_subset <- cpue_subset[cpue_subset$LngtClass < 650,]
+```
+
+As before, The UTM coordinates of the observations are combined into a Loc (location) dataset. That dataset is used to create a mesh in the next step.  
+```{r, eval=TRUE, echo=TRUE}
+Loc <- cbind(cpue_subset$Xkm , cpue_subset$Ykm )
+```
+
+Next we need a mesh for the spatial data. Because we do not want our spatial correlations to pass landmasses (e.g. Denmark) we first make a convex hull of the data points using inla.nonconvex.hull(). This convex hull is used as a boundary for making a 2d mesh. 
+
+```{r, eval=TRUE, echo=TRUE}
+
+ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
+mesh2a    <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(40))
+plot(mesh2a)
+points(Loc, col = 1, pch = 16, cex = 0.5)
+```
+
+Next we inspect the length range in the data by making a histogram of length observations. This histogram can be used to define the locations ofa number of "knots" along the length range that we will later use for our analysis. More knots means a longer computing time (but a higher degree of flexibility in the length component of the spatial correlation). 
+
+There are no individuals with lengths over 680 mm observed. Hence, we remove those lengthclasses (with only zeros) from the data set and define the knots to be within the new length range 
+
+```{r, eval=T, echo=T}
+hist(cpue_subset$LngtClass,200, main="", xlab="Length class (mm)")
+knots <- seq(from = 50, to = 550, by = 100)
+knots 
+```
+
+Using the `r length(knots)` knots as locations, we make a 1 dimensional mesh.   
+```{r, eval=T, echo=T}
+
+# One-dimensional mesh for length class. See the time series module
+mesh.t <- inla.mesh.1d(loc = knots)
+```
+
+In this mesh.t object, the dimensions can be checked using mesh.t$loc (for the locations) and mesh.t$n (the number of locations). The code below confirms that there are `r mesh.t$n` locations, and those are at the values of the knots object. 
+```{r, eval=T, echo=T}
+mesh.t$n
+mesh.t$loc
+```
+
+Now that there is a 1 dimensional mesh for the lengths, we use it to construct a observation/prediction weight matrix ("projector matrix") based on the spatial mesh that we already created earlier (mesh1) and our new mesh for the lengths. The lengths are used in the "group model". The new projector matrix is names A2 to distinguish it from the projector matrix of the previous model.
+
+```{r, eval=T, echo=T}
+# 2. Define the weighting factors a_ik (projector matrix).
+NGroups <- length(knots) 
+A2      <- inla.spde.make.A(mesh  = mesh2a,
+loc   = Loc,
+group = cpue_subset$LngtClass, 
+group.mesh = mesh.t)
+dim(A2) 
+
+# 3. Define the spde
+spde  <- inla.spde2.matern(mesh2a)
+```
+
+We need to make an inla.spde model object for a Matern model, but we still have that available from the model without size structure. That object was named "spde". We use it to make a list of named index vectors for the SPDE model. Note that the command for making the list of index vectors now includes an argument for the groups. 
+
+```{r, eval=T, echo=T}
+w.st <- inla.spde.make.index('w', 
+n.spde = spde$n.spde, 
+n.group = NGroups)
+```
+
+
+Before making the stack we need to convert all fixed effects that are factors in the INLA model.
+```{r, eval=T, echo=T}
+cpue_subset$fYear   <- as.factor(cpue_subset$Year)
+cpue_subset$fSurvey <- as.factor(cpue_subset$Survey)
+```
+
+Next we make a new stack. For this we need a model matrix. Although the fixed effects are the same as in the previous model, we still need to make a new model matrix because the data now include the length structure. 
+
+```{r, eval=T, echo=T}
+# 5. Make a stack. 
+Xmatrix <- model.matrix(~  fYear + fSurvey +  HaulDur,  data = cpue_subset)
+
+head(Xmatrix)
+```
+This Xmatrix contains the model matrix with the fixed effects, including the intercept (The column for the intercept is named
+"(Intercept)", and it is 1 for all observations). However, in the next step the intercept is removed from the model matrix.
+The intercept is then included when making the stack, and named "Intercept" (without brackets). 
+
+```{r, eval=T, echo=T}
+X <- as.data.frame(Xmatrix[,-1])
+names(X) <- c(gsub("[:]",".",names(X)))
+head(X)
+
+N <- nrow(cpue_subset)
+Stack2 <- inla.stack(
+tag  = "Fit",
+data = list(y = cpue_subset$NoPerHaul),    
+A    = list(1,1, A2),                      
+effects = list(  
+Intercept = rep(1, N),       
+X = as.data.frame(X), # Covariates
+w = w.st))                # Spatial-temp field  
+
+```
+
+```{r, eval=T, echo=T}
+fsp <- parse(text=c("y ~ -1 + Intercept + ",
+paste(c(names(X)," f(w, model = spde, group =       w.group, control.group = list(model = 'ar1'))"),collapse =" + ")))
+```
+
+```{r, eval=F, echo=T}
+I2nb <- inla(eval(fsp), family = "nbinomial",
+data=inla.stack.data(Stack2),
+control.compute = list(dic = TRUE, waic = TRUE),
+control.predictor = list(A = inla.stack.A(Stack2)))
+```
+
+```{r, eval=F, echo=T}
+summary(I2nb)
+```
+
+We still have The "UTMmap" object for creating the maps from the previous analysis.
+
+```{r, eval=F, echo=T}
+w <- I2nb$summary.random$w$mean
+# length of w is mesh$n * NGroups
+wproj <- inla.mesh.projector(mesh2a, xlim = range(Loc[,1]), ylim = range(Loc[,2])) 
+
+grid <- expand.grid(length=knots, x = wproj$x, y = wproj$y,zm=NA)
+
+for (i in knots){
+w.pm100100 <- inla.mesh.project(wproj,w[w.st$w.group==which(i==knots)])
+grid[grid$length==i,]$zm <- as.vector(w.pm100100)  
+}
+```
+
+Next we print the grid, which is now estimated at each knot. The observed counts for the length class at each knot are included in each panel. 
+```{r, eval=F, echo=T, dpi=600}
+print(levelplot(zm ~ x * y |length,
+data = grid,
+scales = list(draw = TRUE),
+xlab = list("Easting", cex = 1),
+ylab = list("Northing", cex = 1),
+main = list("Posterior mean spatial random fields", cex = 1),
+col.regions=tim.colors(25, alpha = 1),
+panel=function(x, y, z, subscripts,...){
+panel.levelplot(x, y, z, subscripts,...)
+grid.points(x = cpue_subset[cpue_subset$LngtClass == grid[subscripts[1],]$length,]$Xkm,
+y = cpue_subset[cpue_subset$LngtClass == grid[subscripts[1],]$length,]$Ykm, 
+pch = 1,
+size = unit(cpue_subset[cpue_subset$LngtClass ==grid[subscripts[1],]$length,]$NoPerHaul/15, "char"))  
+}) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black'))
+```
+
+## Including length in the survey catchability
+
+```{r, eval=F, echo=T}
+# 5. Make a stack. 
+Xmatrix <- model.matrix(~  fYear + fSurvey + HaulDur,  data = cpue_subset)
+X <- as.data.frame(Xmatrix[,-1])
+names(X) <- c(gsub("[:]",".",names(X)))
+head(X)
+
+N <- nrow(cpue_subset)
+Stack3 <- inla.stack(
+tag  = "Fit",
+data = list(y = cpue_subset$NoPerHaul),    
+A    = list(1,1, A2),                      
+effects = list(  
+Intercept = rep(1, N),       
+X = as.data.frame(X), # Covariates
+w.st))                # Spatial-temp field  
+
+```
+
+```{r, eval=FALSE, echo=T}
+fsp <- parse(text=c("y ~ -1 + Intercept + ",
+paste(c(names(X)," f(w, model = spde, group =       w.group, control.group = list(model = 'ar1'))", "f(LngtClass, group=fSurvey,'rw2')",collapse =" + ")))
+```
+
+```{r, eval=FALSE, echo=T}
+I3nb <- inla(eval(fsp), family = "nbinomial",
+data=inla.stack.data(Stack3),
+control.compute = list(dic = TRUE, waic = TRUE),
+control.predictor = list(A = inla.stack.A(Stack3)))
+```
+
+```{r, eval=FALSE, echo=T}
+summary(I3nb)
+```

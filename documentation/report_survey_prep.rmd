@@ -1,0 +1,266 @@
+# Distribution map using survey data
+## An example of Starry ray in the North Sea, using INLA
+#### Authors: Geert Aarts, Niels Hintzen, Harriet van Overzee, Jurgen Batsleer, Jan Jaap Poos, Ingrid Tulp
+
+```{r set-options, echo=FALSE, cache=FALSE}
+options(width = 120)
+```
+
+Most of the data we collect at sea is spatially and temporally correlated, such as the International Bottom Trawl Survey (IBTS) or Beam Trawl survey data (BTS) survey data. Often we want to infer temporal or spatial trends in these data.
+
+The statistical package INLA has the advantage over other software in R that it can combine spatial, temporal, zero-inflated, random effects etc models all in one. It therefore is very powerful and may become your one-stop-to-go package. 
+
+This document shows some examples of analyzing survey data using INLA. The first model estimates the number of individuals per haul, taking account of haul location (assuming spatial autocorrelation) and year (as a 'fixed effect'). Differences in counts as a result of the two surveys are accounted for by also having survey as a fixed effect. Subsequent models take lengths into account in determining the counts. In the final part, the counts are expressed per unit area, so population estimates can be made using a 'swept area' approach.    
+## Preparing the R environment
+
+```{r, eval=T, echo=FALSE}
+rm(list=ls())
+```
+
+First, we need to set the path where the data is located and to load the relevant libraries. The inla package can be installed using install.packages("INLA", repos="https://inla.r-inla-download.org/R/stable"). We need the inla package, but also a number of packages for spatial analyses ('rgeos' and 'rgdal')  and for plotting the data and the results ('lattice', 'latticeExtra', 'grid','gridExtra','mapdata', and 'maptools').
+
+```{r, eval=T, results="hide", echo=TRUE, message=FALSE, warning=FALSE}
+path <- "~/WMR-INLA/data"
+#path <- "d://WMR-INLA/data" 
+
+library(INLA); library(fields); 
+library(mgcv)
+library(lattice); library(latticeExtra); library(grid); library(gridExtra);
+library(rgdal); library(rgeos); 
+library(mapdata); library(maptools)
+```
+
+## The IBTS data
+
+We will use the BTS and IBTS data set. In this case we downloaded the data for starry ray. These dataset contains the CPUE per length per haul can be dowloaded from datras.ices.dk. 
+
+First we read in the IBTS dataset. From these data, the hauls in the North Sea are selected by keeping only those that are in (roundfish)areas 1-7. 
+
+```{r, eval=T, echo=TRUE}
+IBTS <- read.csv(file.path(path,"CPUE per length per haul_2017-07-12 11_18_36.csv"), stringsAsFactors = F)
+IBTS <- IBTS[IBTS$Area <= 7,]
+```
+
+The lengths are stored in mm and the CPUE is stored as number per hour. "Zero hauls" are included (hauls where no individuals are counted)
+
+```{r, eval=T, echo=TRUE}
+IBTS$NoPerHaul <- round(IBTS$CPUE_number_per_hour*(IBTS$HaulDur/60))
+
+IBTS <- within(IBTS, haulCode <-  paste0(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong))
+```
+
+To get swept area information for the IBTS we need to read in the HH records of the IBTS. These HH records are available in the IBTS exchange files. The swept areas can be calculated from the travelled distance and the door spread or wing spread. Missing values for thease variables are coded as -9. In the r code those are made into NAs. We make a haul identifier for the hauls like we did for the count data. 
+
+```{r, eval=T, echo=T}
+IBTSHH <- read.csv(file.path(path,"Exchange Data_2017-07-14 09_26_25.csv"), stringsAsFactors = F)
+
+IBTSHH <- within(IBTSHH, haulCode <-  paste0(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong))
+
+IBTSHH[IBTSHH$DoorSpread == -9,]$DoorSpread <- NA
+IBTSHH[IBTSHH$Distance == -9,]$Distance <- NA
+IBTSHH[IBTSHH$WingSpread == -9,]$WingSpread <- NA
+``` 
+
+Next, we plot a histogram of haul duration, a scatterplot of distance versus haul duration, and a scatterplot of doorspread versus wingspread to get a look at the data. Clearly, haul duration is stored in minutes, with most of the hauls being either 30 minutes or 1 hour. Hauls longer than 80 minute are removed because these contain a large proportion of outliers with respect to e.g. distance. This step removes `r sum(IBTSHH$HaulDur > 80)` from the `r nrow(IBTSHH)` hauls.
+
+The wing spread and doorspread are stored in meters, with wing spreads being in the range `r range(IBTSHH$WingSpread, na.rm=T)` meters and doorspread being in the range  `r range(IBTSHH$DoorSpread, na.rm=T)` meters. There is one clear outlier 
+
+```{r, eval=TRUE, echo=TRUE, dpi=600}
+par(mfrow=c(1,3))
+hist(IBTSHH$HaulDur,120, xlim=c(0,120), main= "", xlab="Haul duration (minutes)")
+abline(v=80, lty=2)
+IBTSHH <- IBTSHH[IBTSHH$HaulDur <= 80,]
+
+plot(IBTSHH$HaulDur,IBTSHH$Distance, pch=20, xlab="Haul duration (minutes)", ylab= "Distance (m)")
+
+plot(IBTSHH$WingSpread,IBTSHH$DoorSpread, pch=20, xlab="Wingspread (m)", ylab= "Doorspread (m)")
+abline(a=0,b=1, lty=2)
+```
+
+A surface is calculated by multiplying  wing spread by distance. Both are in metres. The resulting surface is thus in m2. This is converted to km2 by dividing by 1e+06.
+```{r, eval=T, echo=T}
+IBTSHH$surface <- (IBTSHH$Distance * IBTSHH$WingSpread)/1e+06
+```
+
+Next, only relevant variables are selected.
+```{r, eval=T, echo=T}
+IBTSHH <- IBTSHH[names(IBTSHH) %in% c("haulCode", "surface", "HaulDur","Doorspread","Distance","WingSpread")]
+```
+
+Ploting the surface against haul duration and using a simple linear model (without intercept) we hope to find a relationship. 
+```{r, eval=TRUE, echo=TRUE, dpi=600}
+plot(x=IBTSHH$HaulDur,y=IBTSHH$surface, pch=20, main= "IBTS", xlab= "Haul duration ( minutes)", ylab="Surface (km2)", xlim=c(0,80))
+linmod <- lm(surface~ -1 + HaulDur, data=IBTSHH)
+summary(linmod)
+abline(linmod, lty=2)
+```
+
+Indeed, there is a good relationship, where each minute of haul duration adds `coef(linmod)` km2 haul surface for the IBTS. This relationship is used to calculate the surface of hauls where only haul duration is known.   
+```{r, eval=TRUE, echo=TRUE, dpi=600}
+IBTSHH[is.na(IBTSHH$surface),]$surface <- as.numeric(predict(linmod,newdata=IBTSHH))[is.na(IBTSHH$surface)]
+```
+
+Merge the haul information to the full cpue set, after removing haulduration from the  haul data (because we have it in the CPUE set already)
+```{r, eval=T, echo=T}
+IBTSHH$HaulDur <- NULL
+IBTS <- merge(IBTS, IBTSHH,by= "haulCode", all.x=T, all.y=F)
+```
+
+After this merge, there are `nrow(IBTS[is.na(IBTS$surface),])` observation in the IBTS data set that do not have a surface estimate, because their haul duration was larger than the treshold used in our calculations. 
+
+## The BTS data
+
+We have a similar but slightly different data set for BTS. Here, the "zero hauls" have lengthclass NA and the number per haul is NA. These observations are then set to zero, so that we have the same structure as in the IBTS data set. 
+
+```{r, eval=TRUE, echo=TRUE}
+BTS  <- read.csv(file.path(path,"CPUE per length per Hour and Swept Area_2017-07-12 11_29_36.csv"), stringsAsFactors = F)
+
+BTS[is.na(BTS$LngtClass),]$NoPerHaul <- 0
+BTS[is.na(BTS$LngtClass),]$LngtClass <- 0
+```
+
+Which vessels and years are present in BTS set? Note that there are some years in the BTS ISIS where the zero hauls are not added because no specimens were caught in that year (e.g. 2010). That should be fixed at ICES. Alternatively we could download the data with a more abundant species and make our own zero hauls.
+```{r, eval=TRUE, echo=TRUE}
+table(BTS$Ship, BTS$Year)
+```
+The BTS swept area estimate is rounded, and thus not very useful. That's why we will recalculate it: the distance and beam width are in m, so the surface is in m2, and divided by 1e+06 to get km2
+```{r, eval=TRUE, echo=TRUE}
+# there are some negative distances. We make those  NA, and infer their surface later 
+BTS[!is.na(BTS$Distance) & BTS$Distance < 0,]$Distance <- NA
+
+#now calculate surface
+BTS$surface <- (BTS$Distance * BTS$BeamWidth)/1e+06
+
+# summary of the surface gives number of NAs, and whether there are negative values
+summary(BTS$surface)
+summary(BTS$HaulDur)
+```
+
+We use the same procedure of inferring haul surface from haul duration for the missing surfaces of the BTS as we did for IBTS.
+```{r, eval=TRUE, echo=TRUE, dpi=600}
+plot(x=BTS$HaulDur,y=BTS$surface, pch=20, main= "BTS", xlab="Haul duration (minutes)", ylab="Surface (km2)", xlim=c(0,80))
+linmod <- lm(surface~ -1 + HaulDur, data=BTS)
+summary(linmod)
+abline(linmod, lty=2)
+
+BTS[is.na(BTS$surface),]$surface <- as.numeric(predict(linmod,newdata=BTS))[is.na(BTS$surface)]
+```
+
+Indeed, there is a good relationship, where each minute of haul duration adds `coef(linmod)` km2 haul surface for BTS. This relationship is used to calculate the surface of hauls where only haul duration is known.   
+
+Next, we make a unique haul code for the BTS, as we did for IBTS
+```{r, eval=TRUE, echo=TRUE}
+#make haul code
+BTS <- within(BTS, haulCode <- paste0(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong))
+```
+
+The BTS and IBTS datasets need to be combined the two sets into one, using rbind() to combine them by rows. The datasets can only be combined if they have the same columns. The columns that are shared by the two data sets are found using intersect().
+```{r, eval=TRUE, echo=TRUE}
+cols <- intersect(colnames(BTS), colnames(IBTS))
+cpue <- rbind(BTS[,cols],IBTS[,cols])
+
+#remove CPUE per hour that we do not need now that we have counts
+cpue <- cpue[,!names(cpue)=="CPUE_number_per_hour"]
+```
+
+Now that the IBTS and BTS data sets are combined we want to make a set where we have counts for all hauls and all lenghts. This means first making an dentifier for each unique haul (based on the information we have for all the hauls). This identifier is used to make a "trawllist" where all the information for the hauls is stored together with its unique identifier.
+
+Once the trawllist is make we use expand.grid() to make a combination of all hauls and lenght classes. This set is merged with our original data set.
+```{r, eval=TRUE, echo=TRUE}
+trawllist <- cpue[!duplicated(cpue$haulCode),!names(cpue) %in% c("Species","AphiaID","NoPerHaul","Sex", "LngtClass")]
+
+#expand grid 
+hxl <- expand.grid(haulCode=unique(cpue$haulCode),LngtClass=unique(cpue$LngtClass), stringsAsFactors = F)
+full_cpue <- merge(hxl,cpue[names(cpue) %in% c("haulCode", "LngtClass","NoPerHaul")], all.x=T)
+rm(hxl)
+```
+
+After we merged all possible combinations with the data we now have NAs for those lengts and hauls where the catch is zero, and so we set those to zero. This data is subsequently merged to the trawllist so that we have all information together. 
+```{r, eval=TRUE, echo=TRUE}
+full_cpue[is.na(full_cpue$NoPerHaul),]$NoPerHaul <- 0
+full_cpue  <- merge(full_cpue,trawllist, all.x=T)
+```
+
+The records that have lenghts equal to zero (that indicated zero hauls in our original set ) now need to be removed because we have all the information we need (these hauls now have zero catch for the full length range observed in the survey). 
+
+```{r, eval=TRUE, echo=TRUE}
+#now remove zero lengths
+full_cpue <- full_cpue[full_cpue$LngtClass > 0,]
+```
+
+In addition, there are some observations that are highly unlikely: For instance there is a single observation of an individual of 100 cm (in 1977). This is highly suspicious because it is far larger than than any other observation, and likely due to species mis-identification. This can be seen in the histogram of length observations below. 
+
+```{r, eval=TRUE, echo=TRUE, dpi=600}
+par(mfrow=c(1,2))
+len_cutoff <- 990
+hist(full_cpue[full_cpue$Quarter==1 & full_cpue$NoPerHaul >0,]$LngtClass, breaks=100, xlab="Length (mm)", main="Observed lengths q1",xlim=c(0, max(full_cpue$LngtClass)), ylim=c(0,1500))
+abline(v=len_cutoff, col="red")
+grid()
+lines(aggregate(NoPerHaul~LngtClass, data=full_cpue[full_cpue$Quarter==1 & full_cpue$NoPerHaul >0,], FUN="sum"))
+
+hist(full_cpue[full_cpue$Quarter==3 & full_cpue$NoPerHaul >0,]$LngtClass, breaks=100, xlab="Length (mm)", main="Observed lengths q3",xlim=c(0, max(full_cpue$LngtClass)), ylim=c(0,1500))
+abline(v=len_cutoff, col="red")
+grid()
+lines(aggregate(NoPerHaul~LngtClass, data=full_cpue[full_cpue$Quarter==3 & full_cpue$NoPerHaul >0,], FUN="sum"))
+```
+
+Ideally, we would go back to data and the people who collected the data to see if the correctness of the data can be confirmed. In this case there is no possibility to go back so far back in time. We remove these observation from the dat by selecting only observations with length < `r len_cutoff` mm. One could even consider removing the observations of individuals larger than 750 mm. Some of these were recorded in the Southern North Sea, far from where most of the catches were made. Those are likely species misidentification, e.g. with R. clavata. Note that when the length information is included in the analyses a further selection is made for the lengths.
+```{r, eval=TRUE, echo=TRUE}
+#remove single unlikely large individual (of 1 m length) 
+full_cpue <- full_cpue[full_cpue$LngtClass < len_cutoff,]
+head(full_cpue)
+```
+
+For our spatial correlation we will need an isomorphic coordinate system. Therefore we transform the latitudes and longitudes to UTM coordinates. these UTM coordinates are given in meters, so we divide them by 1000 to get kilometers.
+```{r, eval=TRUE, echo=TRUE}
+UTM <- project(cbind(full_cpue$ShootLong, full_cpue$ShootLat), "+proj=utm +zone=31U ellps=WGS84") 
+
+full_cpue$Xkm <- UTM[,1]/1000
+full_cpue$Ykm <- UTM[,2]/1000
+```
+
+The INLA code does not like special characters in some of the variable names, like the hyphen in "NS-IBTS". Therefore we rename the survey to NSIBTS. 
+```{r, eval=TRUE, echo=TRUE}
+full_cpue <- transform(full_cpue, Survey=gsub("-","",Survey))
+```
+
+### Depth data 
+We try to also add depth to the model and we prepare for this now. We have depth for many but not all hauls in the full cpue set. The maximum fishing depth for IBTS standard stations in the North Sea is 200 m. and in Division IIIa 250 m. However, there are some hauls taken at depths deeper than 300 m. and we exclude those. The missing values are indicated by a value of -9, and these have to be transformed into NAs.
+```{r, eval=T, echo=T}
+summary(full_cpue$Depth)
+full_cpue <- full_cpue[full_cpue$Depth < 300,]
+full_cpue[full_cpue$Depth ==-9,]$Depth <- NA
+summary(full_cpue$Depth)
+``` 
+
+Given that the depth for a given location does not change much over the years, we use a generalized additive model to model a depth map, and to predict depths for those hauls where depth is missing. Using the depth in INLA requires that the depth is binned. We use 2 m depth bins. 
+
+```{r, eval=T, echo=T}
+depthmodel <- gam(Depth ~ te(ShootLong,ShootLat,k=20), data=full_cpue[!duplicated(full_cpue$haulCode),])
+summary(depthmodel)
+gam.check(depthmodel)
+plot(depthmodel)
+full_cpue[is.na(full_cpue$Depth),]$Depth <-predict(depthmodel,newdata= full_cpue[is.na(full_cpue$Depth),])
+full_cpue$Depth <- round(full_cpue$Depth/2,0)*2
+```
+The resulting depth map can be seen by plotting the fitted values of the depth model at each observations.
+
+```{r, eval=T, echo=T, dpi=600}
+lons <- full_cpue[!duplicated(full_cpue$haulCode),]$ShootLon
+lats <- full_cpue[!duplicated(full_cpue$haulCode),]$ShootLat
+preds <- predict(depthmodel,newdata= data.frame(ShootLong=lons,ShootLat=lats ))
+
+plot(lons,
+lats,
+pch=20,
+col=rev(tim.colors(15, alpha = 1))[cut(preds,20)], 
+xlab= "Longitude", ylab="latitude", las=1)
+map("world",add=T)
+
+``` 
+
+Finally, we store the survey data (which still has a count per haul per length). this data will be used in the INLA examples
+
+```{r, eval=T, echo=TRUE}
+save(full_cpue,file=file.path(path,"survey_data.Rdata"))
+```
