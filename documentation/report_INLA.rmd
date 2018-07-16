@@ -320,10 +320,10 @@ grid.arrange(p1,p2, ncol=2)
 
 
 ## Using swept area estimates
-
+Rather than using time as a measure of effort, we will use surface. That will allow us to make predictions on the number of individuals caught per unit area. Because of the log link, the surfaces are log transformed (and named "lsurface"). Remember that the units of surface were km2. 
 
 ### Making the stack
-Note that in code below the names in the model matrix should not contain any special characters! This is why we renamed the "NS-IBTS" survey to "NSIBTS"
+Note that in code below the names in the model matrix should not contain any special characters! This is why we renamed the "NS-IBTS" survey to "NSIBTS" earlier.
 ```{r, eval=T, echo=T}
 # 5. Make a stack. In this process we tell INLA at which points on the mesh we sampled the response variable and the covariates. 
 Xmatrix <- model.matrix(~ fYear + fSurvey +  lsurface,  data = cpue_subset)
@@ -353,7 +353,7 @@ Note that N is the number of rows (`r N`) in the data set, and thus equal to the
 
 The model formula used in the inla model is generated from the names of the model matrix, combined with the intercept term and the spatial correlation model ("f(w, model=spde)").
 
-Subsequently, two inla models are run, one assuming that the data are Poisson distributed, and another model assuming that the data are negative binomial distributed.
+Subsequently, two inla models are run, one assuming that the data are Poisson distributed, and another model assuming that the data are negative binomial distributed. These models are named I2nb and I2p. 
 
 ```{r, eval=T, results='hide', echo=T, message=FALSE, warning=FALSE}
 fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde)"),collapse =" + ")))
@@ -384,10 +384,10 @@ summary(I2nb)
 We'll plot the spatial mean and sd, but this time with a grid size of 1 by 1 km. Because the sampling locations are on a km grid, we can first find the ranges of the x and y coordinates of the grid, and then have grid cells of size 1.
 ```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
 # we want to make cells of 1 by 1 km. Let's do this first 
-xl <- range(Loc[,1])
-xres <- round(xl[2]-xl[1])
-yl <-  range(Loc[,2])
-yres <- round(yl[2]-yl[1])
+xl <- round(range(Loc[,1]))
+xres <- xl[2]-xl[1] + 1
+yl <-  round(range(Loc[,2]))
+yres <- yl[2]-yl[1] + 1
 
 wproj <- inla.mesh.projector(mesh1a, dims=c(xres,yres), xlim = xl, ylim = yl) 
 
@@ -436,8 +436,10 @@ grid.arrange(p1,p2, ncol=2)
 ```
 
 
-## Including depth in the swept area estimation
+## Including depth in the swept area estimation.
+Next we will test the effect of including the effect of depth on the counts as a random walk. Given the spatial patterns that were observed in the previous models, depth would be an ideal candidate to explain part of the spatial variation.
 
+First, we need to add depth to the stack. 
 ```{r, eval=T, echo=T}
 N <- nrow(cpue_subset)
 Stack1 <- inla.stack(
@@ -449,11 +451,15 @@ Stack1 <- inla.stack(
        X=X, #Covariates
        Depth = cpue_subset$Depth,
        w = w.st))                  #Spatial field
+```
 
+Next, we extend the model formula. Apart from the elements that we had earlier (the fixed effects and the spatial correlation), we now include the term for the random walk of depth. 
+```{r, eval=T, echo=T}
 #6.	Specify the model formula
 fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde)", ' f(Depth,model="rw2")'),collapse =" + ")))
 ```
 
+The new inla model is named I3nb (we only test a negative binomial error model).
 ```{r, eval=T, echo=T}
 INLA:::inla.dynload.workaround() 
 I3nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
@@ -464,11 +470,12 @@ summary(I3nb)
 
 ```
 
+The random walk of depth can be plotted using the code below:
 ```{r, eval=T, echo=T}
 #plot depth smoother
 Depthm <- I3nb$summary.random$Depth
 
-par(mfrow = c(1,1), mar = c(5,5,2,2), cex.lab = 1.5)
+par(mfrow = c(1,1))
 plot(Depthm[,1:2], type='l',
      xlab = 'Depth', 
      ylab = 'Smoother',
@@ -479,12 +486,13 @@ lines(Depthm[, c(1, 6)], lty=2)
 rug(cpue_subset$Depth)
 ```
 
+Did the spatial correlation change now that we included depth?
 ```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
 # we want to make cells of 1 by 1 km. Let's do this first 
-xl <- range(Loc[,1])
-xres <- round(xl[2]-xl[1])
-yl <-  range(Loc[,2])
-yres <- round(yl[2]-yl[1])
+xl <- round(range(Loc[,1]))
+xres <- xl[2]-xl[1] + 1
+yl <-  round(range(Loc[,2]))
+yres <- yl[2]-yl[1] + 1
 
 wproj <- inla.mesh.projector(mesh1a, dims=c(xres,yres), xlim = xl, ylim = yl) 
 
@@ -531,9 +539,9 @@ grid.arrange(p1,p2, ncol=2)
   
 ```
 
-## Including depth in the swept area estimation and spatio temporal-correlation
+## Including spatio temporal-correlation in the swept area estimation with depth 
 
-
+We need a new A1 object that contains not only the spatial correlation, but also the temporal correlation. This is done by creating a mesh for the time, where there is an observation for each year.
 ```{r, eval=TRUE, echo=TRUE}
 # 2. Define the weighting factors a_ik (also called the projector matrix).
 endyr <- max(cpue_subset$Year)
@@ -559,7 +567,7 @@ w.st <- inla.spde.make.index('w',
 ```
 
 
-
+The stack needs to be updated to include the new A1 object that now includes spatio temporal correlation instead of only spatial correlation.
 ```{r, eval=T, echo=T}
 N <- nrow(cpue_subset)
 Stack1 <- inla.stack(
@@ -571,24 +579,29 @@ Stack1 <- inla.stack(
        X=X, #Covariates
        Depth = cpue_subset$Depth,
        w = w.st))                  #Spatial field
+```
 
+The model formula also needs to be updated.
+```{r, eval=T, echo=T}
 #6.	Specify the model formula
 fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde, group = w.group, control.group = list(model = 'ar1'))", ' f(Depth,model="rw2")'), collapse =" + ")))
 ```
 
+The new model is called I4nb.
 ```{r, eval=T, echo=T}
 INLA:::inla.dynload.workaround() 
-I1nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
+I4nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
            control.compute = list(dic = TRUE, waic = TRUE, config=TRUE, openmp.strategy="large"),
            control.predictor = list(A = inla.stack.A(Stack1)))
 
-summary(I1nb)
+summary(I4nb)
 
 ```
 
+Depth smoother can be plotted again.
 ```{r, eval=T, echo=T}
 #plot depth smoother
-Depthm <- I1nb$summary.random$Depth
+Depthm <- I4nb$summary.random$Depth
 
 par(mfrow = c(1,1), mar = c(5,5,2,2), cex.lab = 1.5)
 plot(Depthm[,1:2], type='l',
@@ -601,17 +614,17 @@ lines(Depthm[, c(1, 6)], lty=2)
 rug(cpue_subset$Depth)
 ```
 
-
-```{r, eval=F, echo=T, fig.width=8, fig.height=4, dpi=600}
+Now we plot the spatial correlation, but we get one panel per year
+```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
 # we want to make cells of 1 by 1 km. Let's do this first 
-xl <- range(Loc[,1])
-xres <- round(xl[2]-xl[1])
-yl <-  range(Loc[,2])
-yres <- round(yl[2]-yl[1])
+xl <- round(range(Loc[,1]))
+xres <- xl[2]-xl[1] + 1
+yl <-  round(range(Loc[,2]))
+yres <- yl[2]-yl[1] + 1
 
 years <- startyr:endyr
 
-w.pm <- I1nb$summary.random$w$mean
+w.pm <- I4nb$summary.random$w$mean
 wproj <- inla.mesh.projector(mesh1a, dims=c(xres,yres), xlim = xl, ylim = yl) 
 
 grid <- expand.grid(year=years, x = wproj$x, y = wproj$y,zm=NA)
@@ -646,16 +659,18 @@ plot(p1)
 
 ```
 
-```{r, eval=F, echo=T, fig.width=8, fig.height=4, dpi=600}
-rho <- I1nb$summary.hy[4,"mean"]
-plot(I1nb$marginals.hyper[[4]],xlab= expression(rho),ylab="Density", type="l")
+Next we plot the posterior of the estimated temporal correlation. The red vertical line indicates the mean of the distribution.
+```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
+rho <- I4nb$summary.hy[4,"mean"]
+plot(I4nb$marginals.hyper[[4]],xlab= expression(rho),ylab="Density", type="l")
 abline(v=rho, col=2)
 
 ```
 
-```{r, eval=F, echo=T, fig.width=8, fig.height=4, dpi=600}
+Plot the characteristics of the spatial correlation.
+```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
 
-SpatField.w <- inla.spde2.result(inla = I1nb, name = "w", spde = spde, do.transfer = TRUE)
+SpatField.w <- inla.spde2.result(inla = I4nb, name = "w", spde = spde, do.transfer = TRUE)
 
 Kappa <- inla.emarginal(function(x) x, 
                         SpatField.w$marginals.kappa[[1]] )
@@ -690,7 +705,7 @@ abline(h = 0.1, lty = 2)
 ```
 
 
-## Simlulate data by sampling from posterior (from I2nb)
+## Simlulate data by sampling from posterior (from I4nb)
 
 Next we want to simulate a number realizations and integrate over surface (per year) so that we get a population level estimate.  
 
@@ -699,8 +714,8 @@ Next we want to simulate a number realizations and integrate over surface (per y
 # to simulate from the model. The output is stored in the Sim object.
 
 set.seed(1234)
-NSim <- 500
-Sim <- inla.posterior.sample(n = NSim, result = I2nb)
+NSim <- 50
+Sim <- inla.posterior.sample(n = NSim, result = I4nb)
 ```
 
 In this example, we thus sample `r NSim` times. The Sim object is a list of length NSim. Each element of  this list contains a single realization. Let's have a closer look.
@@ -713,7 +728,7 @@ rnames <- rownames(Sim[[1]]$latent)
 rtypes <- unique(unlist(lapply(strsplit(rnames,":"),function(x){x[1]})))
 rtypes
 ```
-There are thus a number of different types of rows in latent: APredicto, Predictor, W, and the fixed effects.
+Now, there are a number of different types of rows in latent: APredictor, Predictor, W, Depth, and the fixed effects.
 
 ```{r, eval=T, echo=T}
 #to get the w par realizations out: 
@@ -722,36 +737,82 @@ wrownum <- grep(paste0("^",rtypes[3]),rownames(Sim[[1]]$latent))
 wmat <- sapply(Sim, function(x) {x$latent[wrownum]})
 dim(wmat)
 
-#to get the fixed effect par realizations out 
-fixed <- rtypes[-(1:3)]
+#to get the depth realizations out: 
+rtypes[4]
+drownum <- grep(paste0("^",rtypes[4]),rownames(Sim[[1]]$latent))
+dmat <- sapply(Sim, function(x) {x$latent[drownum]})
+dim(dmat)
+
+
+#to get the fixed effect par realizations out (1:4 now because depth was added) 
+fixed <- rtypes[-(1:4)]
 lrownum <- unlist(lapply(fixed, function(x) {grep(x, rownames(Sim[[1]]$latent), fixed = TRUE)}    ))
 linmat <- sapply(Sim, function(x) {x$latent[lrownum]})
 dim(linmat)
 dimnames(linmat)[[1]] <- fixed
 ```
+The second dimensions of wmat, dmat and linmat are equal to the number of simulations, here `r NSim`. The first dimension of wmat is equal to ... . The first dimension of dmat is equal to the number of depths in the original dataset, see for instance length(unique(cpue_subset$Depth)). We do not have all depths in the depth range in our original dataset, so some interpolation is required.
 
-Sim is thus an object that has ...
+We'll use the approx function to do a linear interpolation using the approx function. In that function we can specify the x and y values for whcih we have information, and estimate the y values at each depth in the grid using the xout argument.
 
-length(wm.pm1km2[!is.na(wm.pm1km2)]) contains surface of grid
+First, we'll need the depth at each grid cell. The locations are in the wproj object as wproj$x and wproj$y. However, the x and y in the gam model that we use are called Xkm and Ykm. Thus, we need some translation first.
+
+A quick plot of the depths (with predictions between 0 and 250 m reveals that the depths are OK. Check if this is still the case when plotting the depths object (that is a matrix with sizes equal to wproj)
+```{r, eval=T, echo=T}
+
+fullgrid <- expand.grid(Xkm=wproj$x, Ykm = wproj$y )
+
+fullgrid$depth <- predict(depthmodel, newdata=fullgrid) 
+ levelplot(depth ~ Xkm * Ykm,  data = fullgrid, at=seq(0,250,10))
+ 
+depths <- matrix(fullgrid$depth, nrow=length(wproj$x),ncol=length(wproj$y), dimnames = list("x" = wproj$x, "y" = wproj$y))
+
+#constrain depths to be within min and max observed depths (otherwise interpolation will fail later)
+depths <- apply(depths, c(1, 2), function(x) min(max(x,min(cpue_subset$Depth)),max(cpue_subset$Depth)))
+
+#take only depths where our grid is (by using info from earlier plot)
+depths[is.na(w.pm1km2)] <- NA 
+image(depths)
+```
+
+
+
+
+length(wm.pm1km2[!is.na(wm.pm1km2)]) contains surface of grid in km2, because it was generated as a 1 by 1 km grid. 
 
 ```{r, eval=T, echo=T}
+
 numbers <- matrix(NA, ncol=length( startyr:2017), nrow=NSim, dimnames=list("sim"=1:NSim,"year"=startyr:2017))
+
+#we will need to extract correct group from spatiotemporal w. Those are numbered 1:xxx.
+# we make a separate counter names gg starting at 1
+gg <- 1
 
 for (ii in startyr:2017){
   for (jj in 1:NSim){
-            #intercept  +           year                         +  ( 0 times beta for lsurface (so we get 1 km))
+               #intercept  +           year        +  ( 0 times beta for lsurface (so we get 1 km))
     if (ii==startyr){
       lin <- linmat["Intercept",jj] +                                 0 * linmat["lsurface",jj]
     }else{
       lin <- linmat["Intercept",jj] + linmat[paste0("fYear",ii),jj] + 0 * linmat["lsurface",jj]
     }
-    # section below is for including spatial corr 
-    wm.pm1km2  <- inla.mesh.project(wproj, wmat[,jj])
-    #only take non-NAs
+    
+    # section below is for including spatial corr. Now we have to select the group. 
+    wm.pm1km2  <- inla.mesh.project(wproj, wmat[w.st$w.group==gg,jj])
+
+    # merging depth in?
+    dd <- approx(x=unique(cpue_subset$Depth),y=dmat[,jj], xout=c(depths))$y
+    dm.pm1km2 <-  matrix(dd, nrow=length(wproj$x),ncol=length(wproj$y), dimnames=list("x"=wproj$x,
+                                                                                      "y"=wproj$y))
+
+    #only take dm and wm values only where wm.pm1km2 non-NAs
+    dm.pm1km2 <- dm.pm1km2[!is.na(wm.pm1km2)]
     wm.pm1km2 <- wm.pm1km2[!is.na(wm.pm1km2)]
-    res <- exp(lin + wm.pm1km2 )
-    numbers[jj,as.character(ii)] <- sum(rnbinom(n=length(res),mu=res,size=I1nb$summary.hyperpar$mean[1]))
+
+    res <- exp(lin + wm.pm1km2 + dm.pm1km2)
+    numbers[jj,as.character(ii)] <- sum(rnbinom(n = length(res), mu = res, size = I4nb$summary.hyperpar$mean[1]))
   }
+  gg <- gg+1
 }
 ```
 
@@ -786,19 +847,21 @@ qwts <- annualmnwt[annualmnwt$Year >= startyr,]$mnwt * qnumbers / 1e6
 
 
 ```{r, eval=T, echo=T}
-matplot(t(qwts), xlab="Years", ylab="Estimated Total Stock Weight (1000 tonnes)", las=1, ylim=c(0,max(qwts)))
+plot(qwts[2,], xlab="Years", ylab="Estimated Total Stock Weight (1000 tonnes)", las=1, type="l", ylim=c(0,max(qwts)))
+lines(qwts[1,], lty=2)
+lines(qwts[3,], lty=2)
 ```
 
 
-## Simlulate data by sampling from posterior (from I2nb)
+## Simlulate data by sampling from posterior, but now from simpler model (I2nb; without depth and only spatial corr)
 
 
 ```{r, eval=FALSE, echo=T}
 
 # Simulate from model I1nb
 set.seed(1234)
-NSim <- 500
-Sim <- inla.posterior.sample(n = NSim, result = I1nb)
+NSim <- 50
+Sim <- inla.posterior.sample(n = NSim, result = I2nb)
 ```
 
 In this example, we thus sample `r NSim` times. The Sim object is a list of length NSim. Each element of  this list contains a single realization. Let's have a closer look.
@@ -820,13 +883,6 @@ wrownum <- grep(paste0("^",rtypes[3]),rownames(Sim[[1]]$latent))
 wmat <- sapply(Sim, function(x) {x$latent[wrownum]})
 dim(wmat)
 
-#to get the depth realizations out: 
-rtypes[4]
-drownum <- grep(paste0("^",rtypes[4]),rownames(Sim[[1]]$latent))
-dmat <- sapply(Sim, function(x) {x$latent[drownum]})
-dim(dmat)
-
-
 #to get the fixed effect par realizations out 
 fixed <- rtypes[-(1:3)]
 lrownum <- unlist(lapply(fixed, function(x) {grep(x, rownames(Sim[[1]]$latent), fixed = TRUE)}    ))
@@ -835,6 +891,52 @@ dim(linmat)
 dimnames(linmat)[[1]] <- fixed
 ```
 
-dmat thus has dimensions nsim, number of depth bins and the estimate of the snoorther for each depth bin present in the data. If we want to project on spatial grid, we thus may need to interpolate for depth that are in the depth matrix. The depth matrix should be modeled on the UTM grid rather than on lat lon, that is easier when combining the depth part of the prediction and te spatiotemporal part.
 
+```{r, eval=T, echo=T}
+
+numbers <- matrix(NA, ncol=length( startyr:2017), nrow=NSim, dimnames=list("sim"=1:NSim,"year"=startyr:2017))
+
+#we will need to extract correct group from spatiotemporal w. Those are numbered 1:xxx.
+# we make a separate counter names gg starting at 1
+
+for (ii in startyr:2017){
+  for (jj in 1:NSim){
+               #intercept  +           year        +  ( 0 times beta for lsurface (so we get 1 km))
+    if (ii==startyr){
+      lin <- linmat["Intercept",jj] +                                 0 * linmat["lsurface",jj]
+    }else{
+      lin <- linmat["Intercept",jj] + linmat[paste0("fYear",ii),jj] + 0 * linmat["lsurface",jj]
+    }
+    
+    # section below is for including spatial corr. Now we have to select the group. 
+    wm.pm1km2  <- inla.mesh.project(wproj, wmat[,jj])
+
+    #only take wm values only where wm.pm1km2 non-NAs
+    wm.pm1km2 <- wm.pm1km2[!is.na(wm.pm1km2)]
+
+    res <- exp(lin + wm.pm1km2 )
+    numbers[jj,as.character(ii)] <- sum(rnbinom(n = length(res), mu = res, size = I2nb$summary.hyperpar$mean[1]))
+  }
+}
+```
+
+Number is the estimated number for the entire surface of the grid
+what are the conf bounds for numbers per year?
+
+```{r, eval=T, echo=T}
+qnumbers <- apply(numbers,2, quantile,c(0.025,0.5,0.975))
+matplot(t(qnumbers), xlab="Years", ylab="Population numbers")
+```
+
+
+```{r, eval=T, echo=T}
+qwts <- annualmnwt[annualmnwt$Year >= startyr,]$mnwt * qnumbers / 1e6
+```
+
+
+```{r, eval=T, echo=T}
+plot(qwts[2,], xlab="Years", ylab="Estimated Total Stock Weight (1000 tonnes)", las=1, type="l", ylim=c(0,max(qwts)))
+lines(qwts[1,], lty=2)
+lines(qwts[3,], lty=2)
+```
 

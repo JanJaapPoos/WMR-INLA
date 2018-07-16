@@ -235,8 +235,10 @@ summary(full_cpue$Depth)
 
 Given that the depth for a given location does not change much over the years, we use a generalized additive model to model a depth map, and to predict depths for those hauls where depth is missing. Using the depth in INLA requires that the depth is binned. We use 2 m depth bins. 
 
+The GAM model in the UTM coordinates. That will be helpfull when we do the INLA modelling and prediction: the grid we will be using there is in UTMs.
+
 ```{r, eval=T, echo=T}
-depthmodel <- gam(Depth ~ te(ShootLong,ShootLat,k=20), data=full_cpue[!duplicated(full_cpue$haulCode),])
+depthmodel <- gam(Depth ~ te(Xkm,Ykm,k=20), data=full_cpue[!duplicated(full_cpue$haulCode),])
 summary(depthmodel)
 gam.check(depthmodel)
 plot(depthmodel)
@@ -246,21 +248,18 @@ full_cpue$Depth <- round(full_cpue$Depth/2,0)*2
 The resulting depth map can be seen by plotting the fitted values of the depth model at each observations.
 
 ```{r, eval=T, echo=T, dpi=600}
-lons <- full_cpue[!duplicated(full_cpue$haulCode),]$ShootLon
-lats <- full_cpue[!duplicated(full_cpue$haulCode),]$ShootLat
-preds <- predict(depthmodel,newdata= data.frame(ShootLong=lons,ShootLat=lats ))
+Xkms <- full_cpue[!duplicated(full_cpue$haulCode),]$Xkm
+Ykms <- full_cpue[!duplicated(full_cpue$haulCode),]$Ykm
+preds <- predict(depthmodel,newdata= data.frame(Xkm=Xkms,Ykm=Ykms ))
 
-plot(lons,
-lats,
-pch=20,
+plot(Xkms,Ykms, pch=20,
 col=rev(tim.colors(15, alpha = 1))[cut(preds,20)], 
-xlab= "Longitude", ylab="latitude", las=1)
-map("world",add=T)
+xlab= "Easting (km)", ylab="Northing (km)", las=1)
 
 ``` 
 
-Finally, we store the survey data (which still has a count per haul per length). this data will be used in the INLA examples
+Finally, we store the survey data (which still has a count per haul per length) and the GAM model for depth. The data will be used in the INLA examples. The depth model will be used to predict depths when we project the INLA results on a grid.
 
 ```{r, eval=T, echo=TRUE}
-save(full_cpue,file=file.path(path,"survey_data.Rdata"))
+save(full_cpue, depthmodel,file=file.path(path,"survey_data.Rdata"))
 ```
