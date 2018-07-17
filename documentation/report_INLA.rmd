@@ -29,7 +29,7 @@ load(file.path(path,"survey_data.Rdata"))
 
 We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will subset the data, and start our analysis from a fiven year. That year is stored in startyr.    
 ```{r, eval=TRUE, echo=TRUE}
-startyr <- 2005
+startyr <- 1990
 cpue_subset <- full_cpue[full_cpue$Year >= startyr,]
 ```
 
@@ -714,7 +714,7 @@ Next we want to simulate a number realizations and integrate over surface (per y
 # to simulate from the model. The output is stored in the Sim object.
 
 set.seed(1234)
-NSim <- 50
+NSim <- 1000
 Sim <- inla.posterior.sample(n = NSim, result = I4nb)
 ```
 
@@ -861,7 +861,7 @@ axis(1,at=1:length(startyr:2017), labels= startyr:2017)
 
 # Simulate from model I1nb
 set.seed(1234)
-NSim <- 50
+NSim <- 1000
 Sim <- inla.posterior.sample(n = NSim, result = I2nb)
 ```
 
