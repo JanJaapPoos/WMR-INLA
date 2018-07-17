@@ -29,7 +29,7 @@ load(file.path(path,"survey_data.Rdata"))
 
 We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will subset the data, and start our analysis from a fiven year. That year is stored in startyr.    
 ```{r, eval=TRUE, echo=TRUE}
-startyr <- 1985
+startyr <- 1980
 cpue_subset <- full_cpue[full_cpue$Year >= startyr,]
 ```
 
