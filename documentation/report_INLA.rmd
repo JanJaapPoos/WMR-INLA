@@ -847,16 +847,17 @@ qwts <- annualmnwt[annualmnwt$Year >= startyr,]$mnwt * qnumbers / 1e6
 
 
 ```{r, eval=T, echo=T}
-plot(qwts[2,], xlab="Years", ylab="Estimated Total Stock Weight (1000 tonnes)", las=1, type="l", ylim=c(0,max(qwts)))
+plot(qwts[2,], xlab="Years", ylab="Estimated Total Stock Weight (1000 tonnes)", las=1, type="l", ylim=c(0,max(qwts)), xaxt='n')
 lines(qwts[1,], lty=2)
 lines(qwts[3,], lty=2)
+axis(1,at=1:length(startyr:2017), labels= startyr:2017)
 ```
 
 
 ## Simlulate data by sampling from posterior, but now from simpler model (I2nb; without depth and only spatial corr)
 
 
-```{r, eval=FALSE, echo=T}
+```{r, eval=T, echo=T}
 
 # Simulate from model I1nb
 set.seed(1234)
@@ -873,7 +874,6 @@ names(Sim[[1]])
 rnames <- rownames(Sim[[1]]$latent)
 rtypes <- unique(unlist(lapply(strsplit(rnames,":"),function(x){x[1]})))
 rtypes
-
 ```
 
 ```{r, eval=T, echo=T}
@@ -893,7 +893,6 @@ dimnames(linmat)[[1]] <- fixed
 
 
 ```{r, eval=T, echo=T}
-
 numbers <- matrix(NA, ncol=length( startyr:2017), nrow=NSim, dimnames=list("sim"=1:NSim,"year"=startyr:2017))
 
 #we will need to extract correct group from spatiotemporal w. Those are numbered 1:xxx.
@@ -928,15 +927,18 @@ qnumbers <- apply(numbers,2, quantile,c(0.025,0.5,0.975))
 matplot(t(qnumbers), xlab="Years", ylab="Population numbers")
 ```
 
-
 ```{r, eval=T, echo=T}
 qwts <- annualmnwt[annualmnwt$Year >= startyr,]$mnwt * qnumbers / 1e6
 ```
 
-
 ```{r, eval=T, echo=T}
-plot(qwts[2,], xlab="Years", ylab="Estimated Total Stock Weight (1000 tonnes)", las=1, type="l", ylim=c(0,max(qwts)))
+plot(qwts[2,], xlab="Years", ylab="Estimated Total Stock Weight (1000 tonnes)", las=1, type="l", ylim=c(0,max(qwts)), xaxt='n')
 lines(qwts[1,], lty=2)
 lines(qwts[3,], lty=2)
+axis(1,at=1:length(startyr:2017), labels= startyr:2017)
 ```
 
+Save image
+```{r, eval=T, echo=T}
+save.image("INLA_results.Rdata")
+```
