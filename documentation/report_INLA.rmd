@@ -4,13 +4,16 @@
 #### Authors: Geert Aarts, Niels Hintzen, Harriet van Overzee, Jurgen Batsleer, Jan Jaap Poos, Ingrid Tulp
 
 ```{r set-options, echo=FALSE, cache=FALSE}
-options(width = 120)
+options(width = 110)
 rm(list=ls())
 ```
+The survey data are so called geostatistical data where we have an observation (in many cases counts of a species in a sample) with a spatial index, such as longitude and latitude. 
 
-Set correct path for data, load libraries and load the full_cpue data set 
+Often, these survey data also have a number of other observations, e.g. about the depth at the sampling location, or the substrate at the location of the sample. these can be used as covariates to study their effects on the counts in the sample.
 
-First, we need to set the path where the data is located and to load the relevant libraries. The inla package can be installed using install.packages("INLA", repos="https://inla.r-inla-download.org/R/stable"). We need the inla package, but also a number of packages for spatial analyses ('rgeos' and 'rgdal')  and for plotting the data and the results ('lattice', 'latticeExtra', 'grid','gridExtra','mapdata', and 'maptools').
+INLA stands for "Integrated Nested Laplace Approximations". INLA is a tool for Bayesian inference in regression models. The models may consist of various components, such as a spatial component, random effects and both linear and smooth effects of some covariates (Rue et al. 2009). In INLA, the geostatistical data can thus be analysed, examining the effect of the covariates, and the spatial, temporal, or spatial-temporal correlation in the observations.
+
+Before we get started we need to set the correct path for accessing the data, and to load the relevant libraries. The INLA package can be installed using install.packages("INLA", repos="https://inla.r-inla-download.org/R/stable"). We need the inla package, but also a number of packages for spatial analyses ('rgeos' and 'rgdal')  and for plotting the data and the results ('lattice', 'latticeExtra', 'grid','gridExtra','mapdata', and 'maptools').
 
 ```{r, eval=T, results="hide", echo=TRUE, message=FALSE, warning=FALSE}
 path <- "~/WMR-INLA/data"
@@ -33,12 +36,18 @@ startyr <- 1980
 cpue_subset <- full_cpue[full_cpue$Year >= startyr,]
 ```
 
-In this example we thus start from `r startyr`.  The earlier we start, the more information we will obtain from the analysis on the annual changes in the count data. However, including more data also means we require more memory to store the model, and wait longer for the model to run. If too much data is used in the inla model, so that more computer memory is required than you have available, the model will crash. Now we have `r  nrow(cpue_subset)` rows left in cpue_subset. 
+In this example we thus start from `r startyr`.  The earlier we start, the more information we will obtain from the analysis on the annual changes in the count data. However, including more data also means we require more memory to store the model, and wait longer for the model to run. If too much data is used in the INLA model, so that more computer memory is required than you have available, the model will crash. Now we have `r  nrow(cpue_subset)` rows left in cpue_subset. 
+
+The count data is now organized by haul and length. The haul data is associated with the covariates such as depth, survey, year of the sample, etc.
+
+We will aggregate the data so that we only have counts per haul, summing the counts per length within each haul. Because we want to keep the covariates, we add those to the aggregate command.
 
 ```{r, eval=T, echo=TRUE}
 cpue_subset <- aggregate(NoPerHaul ~ haulCode + Survey +  Quarter + Ship + Gear  + HaulNo + Year + HaulDur + surface + ShootLong + ShootLat +  Xkm + Ykm +  Depth, data= cpue_subset,FUN="sum")
 ```
-After the aggregation (now that the length information is removed) we have `r  nrow(cpue_subset)` rows in the data set. To give us a quick impression of the data we plot it in a map. The two surveys have different colors, black being the BTS hauls, red being the IBTS hauls in quarter 1 and blue being the IBTS hauls in quarter 3. The size of the circles indicate the counts in each haul.
+After the aggregation (now that the length information is removed) we have `r  nrow(cpue_subset)` rows in the data set.
+
+To give an impression of the spatial properties of the data we plot it in a map. The surveys have different colors; black being the BTS hauls, red being the IBTS hauls in quarter 1, and blue being the IBTS hauls in quarter 3. The size of the circles indicate the counts in each haul.
 ```{r, eval=T, echo=TRUE, dpi=600}
 par(mfrow=c(1,2))
 plot(cpue_subset$ShootLong,cpue_subset$ShootLat, 
@@ -67,20 +76,21 @@ hist(cpue_subset[cpue_subset$Survey == "NSIBTS" &cpue_subset$Quarter == 3,]$NoPe
 
 ```
 
-The count data is clearly quite skewed, with lots of zeros and small values, and very few large counts. Because of this distribution and because  these are counts, a Poisson and a negative binomial distribution will be used in the inla model. We will also test if zero-inflation provides better fits to the data.  
+The count data is clearly quite skewed, with lots of zeros and small values, and very few large counts. Because of this distribution and because  these are counts, a Poisson and a negative binomial distribution will be used in the INLA model. We will also test if zero-inflation provides better fits to the data.  
 
 ## Making a spatial mesh for the data
 
-The UTM coordinates of the data set are combined into a Loc (location) dataset. That data set will be used later to generate spatial meshes for the data.   
+When making a mesh the study area is divided into a large number of non-overlapping triangles (Zuur et al. 2017). This mesh is used to estimated the spatial correlation in the data.
+
+First, UTM coordinates of the data set are combined into a data frame. That data frame will be used later to generate spatial meshes for the data.   
 ```{r, eval=T, echo=TRUE}
 Loc <- cbind(cpue_subset$Xkm , cpue_subset$Ykm )
 ```
 
-Next we need a mesh for the spatial data. Because we do not want our spatial correlations to pass landmasses (e.g. Denmark) we first make a nonconvex hull of the data points using inla.nonconvex.hull(). This convex hull is used as a boundary for making a 2d mesh. The generation of the actual mesh is done using inla.mesh.2d(). That function takes several arguments, incuding "cutoff" and "max.edge". These arguments specify how fine the final mesh will be. Finer meshes will be able to capture smaller scale spatial correlations, but require more comuting time in the inla model.
+Before creating the mesh we need a boundary for it: we do not want our spatial correlations to pass landmasses (e.g. Denmark). The boundary is made using a nonconvex hull of the data points, with function inla.nonconvex.hull(). This convex hull is used as a boundary for making a 2d mesh. 
 
 ```{r, eval=T, echo=TRUE}
 ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
-mesh1a   <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(40))
 ```
 
 As an alternative to using the nonconvex hull function to generate a boundary,, we can also take the shapefile of the North Seaas the boundary of the mesh, which makes prediction in the future easier, as we know no record can be found outside the North Sea area (give or take evolution). We first load the ICES shapefiles which were downloaded from http://gis.ices.dk/sf/. We load this shapefiles, merge layers together, transform to UTM, convert UTM to km rather than meters and finally create a mesh. 
@@ -93,8 +103,13 @@ NorthSeaUTM <- spTransform(NorthSea,CRS("+proj=utm +zone=31"))
 
 NS.border <- inla.sp2segment(NorthSeaUTM)
 NS.border$loc <- NS.border$loc/1000
+```
 
-mesh1b      <- inla.mesh.2d(boundary=NS.border, cutoff=3,max.edge=c(40))
+Now that we have the tow possible boundaries to use for the mesh, we can generate a mesh with each. The generation of the mesh is done using inla.mesh.2d(). That function takes several arguments, incuding "cutoff" and "max.edge". The max.edge argument specifies the largest allowable edge length for the for the triangles in the mesh. Hence, these arguments specify how fine the final mesh will be. Finer meshes will be able to capture smaller scale spatial correlations, but require more computing time in the inla model.
+
+```{r, eval=T, echo=TRUE}
+mesh1a  <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(40))
+mesh1b  <- inla.mesh.2d(boundary=NS.border, cutoff=3,max.edge=c(40))
 ```
 
 The meshes can be plotted using the plot() function on the mesh object. Once the mesh is plotted, the locations of the samples (stored in the Loc object) can be overlayed using points(). Below, the two meshes are plotted side-by-side.
@@ -141,7 +156,7 @@ cpue_subset$lhauldur   <- log(cpue_subset$HaulDur)
 
 Note that in code below the names in the model matrix should not contain any special characters! This is why we renamed the "NS-IBTS" survey to "NSIBTS"
 ```{r, eval=T, echo=T}
-# 5. Make a stack. In this process we tell INLA at which points on the mesh we sampled the response variable and the covariates. 
+# 5. Make a stack. In this process we tell INLA about the and the covariates and at which points on the mesh we sampled the response variable . 
 Xmatrix <- model.matrix(~ fYear + fSurvey +  lhauldur,  data = cpue_subset)
 head(Xmatrix)
 ```
@@ -190,19 +205,18 @@ I1zinb <- inla(eval(fsp), family = "zeroinflatednbinomial1", data=inla.stack.dat
            control.compute = list(dic = TRUE, waic = TRUE, config=TRUE),
            control.predictor = list(A = inla.stack.A(Stack1)))
 ```
-Once the INLA models are run, a summary can be printed for the two models. This summary contains much of the relevant information for the models. Below is the example for the Poisson model. The summary also  contains the WAIC criterion. WAIC works just like AIC in that the model with the lowest WAIC should be selected.
+Once the INLA models are run, a summary can be printed for the models. This summary contains much of the relevant information for the models. The summary also  contains the DIC and WAIC criterions. DIC and WAIC work just like AIC in that the model with the lowest WAIC should be selected.
 
 ```{r, eval=T, echo=T}
-summary(I1p)
 summary(I1p)$waic$waic
 ```
 
-The Poisson model this has a WAIC value of `r summary(I1p)$waic$waic`. We can make a simple table to compare the WAIC values of the different models.
+The Poisson model thus has a WAIC value of `r summary(I1p)$waic$waic`. We can make a simple table to compare the WAIC values of the different models.
 
 ```{r, eval=T, echo=T}
-dic2  <- c(I1p$dic$dic, I1nb$dic$dic, I1zip$dic$dic, I1zinb$dic$dic)
-waic2 <- c(I1p$waic$waic, I1nb$waic$waic, I1zip$waic$waic, I1zinb$waic$waic)
-Z     <- cbind(dic2, waic2)
+dic  <- c(I1p$dic$dic, I1nb$dic$dic, I1zip$dic$dic, I1zinb$dic$dic)
+waic <- c(I1p$waic$waic, I1nb$waic$waic, I1zip$waic$waic, I1zinb$waic$waic)
+Z     <- cbind(dic, waic)
 rownames(Z) <- c("Poisson model",  "Negative binomial model", "Zero Inflated Poisson model",  "Zero Inflated Negative binomial model" )
 Z
 ```
@@ -234,7 +248,7 @@ breaks <- c(as.numeric(names(table(cpue_subset$NoPerHaul))),1000)
 points(y=log(table(cut(I1zinb$summary.fitted.values[idx,"mean"],breaks=breaks))),x=pos[,1],col=2,pch=19)
 ```
 
-```{r, eval=T, echo=T,  dpi=600}
+```{r, eval=T, echo=T}
 # Spatial info
 SpatField.w <- inla.spde2.result(inla = I1nb, name = "w", spde = spde, do.transfer = TRUE)
 
@@ -247,8 +261,12 @@ Sigma_u <- inla.emarginal(function(x) sqrt(x),
 range <- inla.emarginal(function(x) x, 
                         SpatField.w$marginals.range.nominal[[1]] )
 
-Kappa; Sigma_u; range       #Distance at which the correlation diminishes
+c(Kappa, Sigma_u, range)
+```
 
+The range is the distance at which the spatial correlation is approxmately 0.1. Below we plot the correlation as a function of distance, with a hortizontal line where the correlation is 0.1.
+
+```{r, eval=T, echo=T,  dpi=600}
 # Show correlation structure
 LocMesh <- mesh1a$loc[,1:2]
 
@@ -370,9 +388,9 @@ I2nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
 Once the INLA models are run, the information criteria and summaries can be printed for the models. This summary contains much of the relevant information for the models, including the WAIC.
 
 ```{r, eval=T, echo=T}
-dic2  <- c(I2p$dic$dic, I2nb$dic$dic)
-waic2 <- c(I2p$waic$waic, I2nb$waic$waic)
-Z     <- cbind(dic2, waic2)
+dic  <- c(I2p$dic$dic, I2nb$dic$dic)
+waic <- c(I2p$waic$waic, I2nb$waic$waic)
+Z     <- cbind(dic, waic)
 rownames(Z) <- c("Poisson model",  "Negative binomial model" )
 Z
 ```
@@ -381,7 +399,7 @@ Z
 summary(I2nb)
 ```
 
-We'll plot the spatial mean and sd, but this time with a grid size of 1 by 1 km. Because the sampling locations are on a km grid, we can first find the ranges of the x and y coordinates of the grid, and then have grid cells of size 1.
+We will plot the spatial mean and sd, but this time with a grid size of 1 by 1 km. Because the sampling locations are on a km grid, we can first find the ranges of the x and y coordinates of the grid, and then have grid cells of size 1.
 ```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
 # we want to make cells of 1 by 1 km. Let's do this first 
 xl <- round(range(Loc[,1]))
@@ -432,7 +450,6 @@ p2 <- levelplot(zsd ~ x * y,
           }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
 
 grid.arrange(p1,p2, ncol=2)
-  
 ```
 
 
@@ -467,14 +484,16 @@ I3nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
            control.predictor = list(A = inla.stack.A(Stack1)))
 
 summary(I3nb)
-
 ```
 
-The random walk of depth can be plotted using the code below:
+The information about the random walk model for the effect of depth on the counts is located in the summary of the random effects. It is stored in a data frame, and we copy it into a new object named Depthm 
 ```{r, eval=T, echo=T}
 #plot depth smoother
 Depthm <- I3nb$summary.random$Depth
+```
 
+The first column is named "ID", and contains the depth. The second culm is called "mean" and contains the partial effect of depth on the counts, based on the random walk smoother. Columns 4 and 6 contain the 0.025 quantile and 0.0975 quantiles of the smoother. Below we plot those two columns and add a rug plot to show the depths of our observations.
+```{r, eval=T, echo=T, dpi=600}
 par(mfrow = c(1,1))
 plot(Depthm[,1:2], type='l',
      xlab = 'Depth', 
@@ -489,13 +508,6 @@ rug(cpue_subset$Depth)
 Did the spatial correlation change now that we included depth?
 ```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
 # we want to make cells of 1 by 1 km. Let's do this first 
-xl <- round(range(Loc[,1]))
-xres <- xl[2]-xl[1] + 1
-yl <-  round(range(Loc[,2]))
-yres <- yl[2]-yl[1] + 1
-
-wproj <- inla.mesh.projector(mesh1a, dims=c(xres,yres), xlim = xl, ylim = yl) 
-
 wm.pm100100  <- inla.mesh.project(wproj, I3nb$summary.random$w$mean)
 wsd.pm100100 <- inla.mesh.project(wproj, I3nb$summary.random$w$sd)
     
@@ -595,10 +607,18 @@ I4nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
            control.predictor = list(A = inla.stack.A(Stack1)))
 
 summary(I4nb)
-
 ```
 
-Depth smoother can be plotted again.
+We compare the information criteria for all swept area models
+```{r, eval=T, echo=T}
+dic  <- c(I2p$dic$dic, I2nb$dic$dic, I3nb$dic$dic, I4nb$dic$dic)
+waic <- c(I2p$waic$waic, I2nb$waic$waic, I3nb$waic$waic, I4nb$waic$waic)
+Z     <- cbind(dic, waic)
+rownames(Z) <- c("Spatial Poisson model",  "Spatial NB model", "Spatial NB model depth","Spatial-temporal NB model depth" )
+Z
+```
+
+Depth smoother can be plotted again, now for the Negative Binomial model with spatial-temporal correlation.
 ```{r, eval=T, echo=T}
 #plot depth smoother
 Depthm <- I4nb$summary.random$Depth
@@ -614,14 +634,9 @@ lines(Depthm[, c(1, 6)], lty=2)
 rug(cpue_subset$Depth)
 ```
 
-Now we plot the spatial correlation, but we get one panel per year
-```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
+Now we plot the spatial correlation. Because we now have a spatial-temporal model we need to plot one panel per year. The panels are quite small, so we chose not to plot the observations
+```{r, eval=T, echo=T, fig.width=8, fig.height=8, dpi=600}
 # we want to make cells of 1 by 1 km. Let's do this first 
-xl <- round(range(Loc[,1]))
-xres <- xl[2]-xl[1] + 1
-yl <-  round(range(Loc[,2]))
-yres <- yl[2]-yl[1] + 1
-
 years <- startyr:endyr
 
 w.pm <- I4nb$summary.random$w$mean
@@ -640,35 +655,35 @@ wld <- data.frame(lon=wld$x, lat=wld$y)
 UTMmap <- project(cbind(wld$lon, wld$lat), "+proj=utm +zone=31U ellps=WGS84")
 UTMmapFinal <- data.frame("xm"  =UTMmap[,1]/1e3, "ym" = UTMmap[,2]/1e3)
 
-p1 <- levelplot(zm ~ x * y|year  ,
+p1 <- levelplot(zm ~ x * y|as.factor(year)  ,
           data = grid, 
           scales = list(draw = TRUE),
           xlab = list("Easting", cex = 1),
           ylab = list("Northing", cex = 1),
           main = list("Posterior mean spatial random fields", cex = 1),
           col.regions=tim.colors(25, alpha = 1),
+           strip = strip.custom(style = 1),
           panel=function(x, y, z, subscripts,...){
             panel.levelplot(x, y, z, subscripts,...)
             grid.points(x = cpue_subset[cpue_subset$Year == grid[subscripts[1],]$year,]$Xkm,
                         y = cpue_subset[cpue_subset$Year == grid[subscripts[1],]$year,]$Ykm, 
                         pch = 1,
-                        size = unit(cpue_subset[cpue_subset$Year ==grid[subscripts[1],]$year,]$NoPerHaul/25, "char"))  
+                        size = unit(0.0005*cpue_subset[cpue_subset$Year ==grid[subscripts[1],]$year,]$NoPerHaul/
+                                    cpue_subset[cpue_subset$Year ==grid[subscripts[1],]$year,]$surface, "char"))  
           }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
 
 plot(p1)
-
 ```
 
-Next we plot the posterior of the estimated temporal correlation. The red vertical line indicates the mean of the distribution.
-```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
-rho <- I4nb$summary.hy[4,"mean"]
+Next we plot the posterior of the estimated temporal correlation. The drawn red vertical line indicates the mean of the distribution. The dashed line indicate the 0.025 and 0.975 quantiles.
+```{r, eval=T, echo=T, dpi=600}
+rho <-  I4nb$summary.hy[4,c("0.025quant","mean","0.975quant")]
 plot(I4nb$marginals.hyper[[4]],xlab= expression(rho),ylab="Density", type="l")
-abline(v=rho, col=2)
-
+abline(v=rho, col=2,lty=c(2,1,2))
 ```
 
-Plot the characteristics of the spatial correlation.
-```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
+Plot the characteristics of the spatial (Matern) correlation.
+```{r, eval=T, echo=T}
 
 SpatField.w <- inla.spde2.result(inla = I4nb, name = "w", spde = spde, do.transfer = TRUE)
 
@@ -681,8 +696,12 @@ Sigma_u <- inla.emarginal(function(x) sqrt(x),
 range <- inla.emarginal(function(x) x, 
                         SpatField.w$marginals.range.nominal[[1]] )
 
-Kappa; Sigma_u; range       #Distance at which the correlation diminishes
+c(Kappa, Sigma_u, range)   
+```
 
+The range is the distance at which the spatial correlation is approxmately 0.1. Below we plot the correlation as a function of distance, with a hortizontal line where the correlation is 0.1.
+
+```{r, eval=T, echo=T, dpi=600}
 # Show correlation structure
 LocMesh <- mesh1a$loc[,1:2]
 
@@ -699,8 +718,8 @@ Cor.M[1] <- 1
 par(mfrow=c(1,1))
 plot(x = d.vec, y = Cor.M, 
      type = "l", 
-     xlab = "Distance", 
-     ylab = "Correlation")
+     xlab = "Distance (kilometers)", 
+     ylab = "Correlation", yaxs="i", las=1, ylim=c(-0.001,1))
 abline(h = 0.1, lty = 2)
 ```
 
@@ -712,7 +731,6 @@ Next we want to simulate a number realizations and integrate over surface (per y
 ```{r, eval=T, echo=T}
 # Simulate regression parameters using inla.posterior.sample 
 # to simulate from the model. The output is stored in the Sim object.
-
 set.seed(1234)
 NSim <- 1000
 Sim <- inla.posterior.sample(n = NSim, result = I4nb)
@@ -743,7 +761,6 @@ drownum <- grep(paste0("^",rtypes[4]),rownames(Sim[[1]]$latent))
 dmat <- sapply(Sim, function(x) {x$latent[drownum]})
 dim(dmat)
 
-
 #to get the fixed effect par realizations out (1:4 now because depth was added) 
 fixed <- rtypes[-(1:4)]
 lrownum <- unlist(lapply(fixed, function(x) {grep(x, rownames(Sim[[1]]$latent), fixed = TRUE)}    ))
@@ -753,7 +770,7 @@ dimnames(linmat)[[1]] <- fixed
 ```
 The second dimensions of wmat, dmat and linmat are equal to the number of simulations, here `r NSim`. The first dimension of wmat is equal to ... . The first dimension of dmat is equal to the number of depths in the original dataset, see for instance length(unique(cpue_subset$Depth)). We do not have all depths in the depth range in our original dataset, so some interpolation is required.
 
-We'll use the approx function to do a linear interpolation using the approx function. In that function we can specify the x and y values for whcih we have information, and estimate the y values at each depth in the grid using the xout argument.
+We'll use the approx function to do a linear interpolation using the approx function. In that function we can specify the x and y values for which we have information, and estimate the y values at each depth in the grid using the xout argument.
 
 First, we'll need the depth at each grid cell. The locations are in the wproj object as wproj$x and wproj$y. However, the x and y in the gam model that we use are called Xkm and Ykm. Thus, we need some translation first.
 
@@ -774,9 +791,6 @@ depths <- apply(depths, c(1, 2), function(x) min(max(x,min(cpue_subset$Depth)),m
 depths[is.na(w.pm1km2)] <- NA 
 image(depths)
 ```
-
-
-
 
 length(wm.pm1km2[!is.na(wm.pm1km2)]) contains surface of grid in km2, because it was generated as a 1 by 1 km grid. 
 
@@ -821,10 +835,14 @@ what are the conf bounds for numbers per year?
 
 ```{r, eval=T, echo=T}
 qnumbers <- apply(numbers,2, quantile,c(0.025,0.5,0.975))
-matplot(t(qnumbers), xlab="Years", ylab="Population numbers")
+
+plot(qnumbers[2,]/1e6, xlab="Years", ylab="Population numbers (millions)", las=1, type="l", ylim=c(0,max(qnumbers)), xaxt='n', yaxs="i")
+lines(qnumbers[1,]/1e6, lty=2)
+lines(qnumbers[3,]/1e6, lty=2)
+axis(1,at=1:length(startyr:2017), labels= startyr:2017)
 ```
 
-what are the average weights per year?
+What are the average weights per year?
 To go from number to weight we need alpha and beta from growth curve (for length in cm and resulting W is in g )
 alpha=0.156650
 beta=2.190 ref is Bedford et al. 1986
@@ -836,7 +854,7 @@ full_cpue$wt <-  (alpha * (full_cpue$LngtClass/10)^beta * full_cpue$NoPerHaul) /
 annualmnwt <- aggregate(cbind(wt,NoPerHaul) ~ Year, data= full_cpue,  FUN= "sum") 
 annualmnwt <- within(annualmnwt, mnwt <- wt/NoPerHaul)
 
-plot(mnwt~Year, data=annualmnwt, type="b")
+plot(mnwt~Year, data=annualmnwt, type="b", ylab="Mean weight (kg)", ylim=c(0,max(mnwt)),las=1)
 ```
 
 Multiply weights by population numbers to get estimated population biomass. Divide by 1e6 to go from kg to 1000 tonnes. 
@@ -847,7 +865,7 @@ qwts <- annualmnwt[annualmnwt$Year >= startyr,]$mnwt * qnumbers / 1e6
 
 
 ```{r, eval=T, echo=T}
-plot(qwts[2,], xlab="Years", ylab="Estimated Total Stock Weight (1000 tonnes)", las=1, type="l", ylim=c(0,max(qwts)), xaxt='n')
+plot(qwts[2,], xlab="Years", ylab="Stock Biomass (1000 tonnes)", las=1, type="l", ylim=c(0,max(qwts)), xaxt='n',yaxs="i")
 lines(qwts[1,], lty=2)
 lines(qwts[3,], lty=2)
 axis(1,at=1:length(startyr:2017), labels= startyr:2017)
@@ -924,7 +942,11 @@ what are the conf bounds for numbers per year?
 
 ```{r, eval=T, echo=T}
 qnumbers <- apply(numbers,2, quantile,c(0.025,0.5,0.975))
-matplot(t(qnumbers), xlab="Years", ylab="Population numbers")
+
+plot(qnumbers[2,]/1e6, xlab="Years", ylab="Population numbers (millions)", las=1, type="l", ylim=c(0,max(qnumbers)), xaxt='n', yaxs="i")
+lines(qnumbers[1,]/1e6, lty=2)
+lines(qnumbers[3,]/1e6, lty=2)
+axis(1,at=1:length(startyr:2017), labels= startyr:2017)
 ```
 
 ```{r, eval=T, echo=T}
@@ -932,7 +954,7 @@ qwts <- annualmnwt[annualmnwt$Year >= startyr,]$mnwt * qnumbers / 1e6
 ```
 
 ```{r, eval=T, echo=T}
-plot(qwts[2,], xlab="Years", ylab="Estimated Total Stock Weight (1000 tonnes)", las=1, type="l", ylim=c(0,max(qwts)), xaxt='n')
+plot(qwts[2,], xlab="Years", ylab="Stock Biomass (1000 tonnes)", las=1, type="l", ylim=c(0,max(qwts)), xaxt='n')
 lines(qwts[1,], lty=2)
 lines(qwts[3,], lty=2)
 axis(1,at=1:length(startyr:2017), labels= startyr:2017)
@@ -940,5 +962,5 @@ axis(1,at=1:length(startyr:2017), labels= startyr:2017)
 
 Save image
 ```{r, eval=T, echo=T}
-save.image("INLA_results.Rdata")
+save.image("INLA_results2.Rdata")
 ```

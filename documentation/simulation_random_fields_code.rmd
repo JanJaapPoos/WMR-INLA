@@ -1,0 +1,64 @@
+# Distribution map using survey data
+## An example of Starry ray in the North Sea, using INLA
+#### Authors: Geert Aarts, Niels Hintzen, Harriet van Overzee, Jurgen Batsleer, Jan Jaap Poos, Ingrid Tulp
+
+```{r set-options, echo=FALSE, cache=FALSE}
+options(width = 120)
+```
+
+```{r, eval=T, echo=TRUE, dpi=600}
+
+# Create two spatially correlated environmental variables: X1 and X2
+    # Load libraries
+      library(RandomFields)
+    
+    # exponential model;
+    # the model includes nugget effect and the mean:
+      model <- RMexp(var=5, scale=10) + # with variance 4 and scale 10
+      RMnugget(var=1) + # nugget
+      RMtrend(mean=0.5) # and mean
+    
+    # define the locations:
+      from <- 0
+      to <- 20
+      x.seq <- seq(from, to, length=200) 
+      y.seq <- seq(from, to, length=200)
+    
+    # Create random fiels  
+      simu1 <- RFsimulate(model, x=x.seq, y=y.seq)
+      simu2 <- RFsimulate(model, x=x.seq, y=y.seq)
+      plot(simu1)
+      plot(simu2)
+
+# Generate mean intensity function (e.g. exponential function of covariates)
+  intensity<-simu1
+  intensity@data<-(exp(simu1@data/4-0.5*simu2@data/4))
+  plot(intensity)
+  
+# Show dependence between intensity and environmental variables
+  par(mfrow=c(1,2))
+  plot(intensity@data$variable1,simu1@data$variable1,pch=20,col=rgb(0,0,0,.1),cex=0.3)
+  plot(intensity@data$variable1,simu2@data$variable1,pch=20,col=rgb(0,0,0,.1),cex=0.3)
+   
+# Create data.frame  
+  nr<-nrow(intensity@data)
+  md<-data.frame(X1=rep(simu1@data$variable1,5), X2=rep(simu2@data$variable1,5),intensity=rep(intensity@data$variable1,5),year=rep(1:5,each=nr))
+  md$intensity.year<-md$intensity*md$year # so in later years, higher average intensity.
+  
+# Generate poisson distributed counts based on intensity function
+# Do this for 5 years, but only rescale intensity function
+  set.seed(1)
+  md$counts<-rpois(nrow(md),md$intensity.year)
+  hist(md$counts)
+  
+# Some overispersion?  
+  var(md$counts)/mean(md$counts)
+  
+  
+  #add x and y coordinates
+  
+# Sample grid cells (representing hauls) from this grid
+  row.samp<-sample()
+
+# Fit spatial INLA model; with covariate X1 only, spde and factor variable for year
+```
