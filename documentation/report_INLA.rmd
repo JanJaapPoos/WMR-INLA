@@ -90,10 +90,10 @@ Loc <- cbind(cpue_subset$Xkm , cpue_subset$Ykm )
 Before creating the mesh we need a boundary for it: we do not want our spatial correlations to pass landmasses (e.g. Denmark). The boundary is made using a nonconvex hull of the data points, with function inla.nonconvex.hull(). This convex hull is used as a boundary for making a 2d mesh. 
 
 ```{r, eval=T, echo=TRUE}
-ConvHull <- inla.nonconvex.hull(Loc, convex=-0.02, resolution=90)
+ConvHull <- inla.nonconvex.hull(points=Loc, convex=-0.02, resolution=90)
 ```
 
-As an alternative to using the nonconvex hull function to generate a boundary,, we can also take the shapefile of the North Seaas the boundary of the mesh, which makes prediction in the future easier, as we know no record can be found outside the North Sea area (give or take evolution). We first load the ICES shapefiles which were downloaded from http://gis.ices.dk/sf/. We load this shapefiles, merge layers together, transform to UTM, convert UTM to km rather than meters and finally create a mesh. 
+As an alternative to using the nonconvex hull function to generate a boundary, we can also take the shapefile of the North Seaas the boundary of the mesh, which makes prediction in the future easier, as we know no record can be found outside the North Sea area (give or take evolution). We first load the ICES shapefiles which were downloaded from http://gis.ices.dk/sf/. We load this shapefiles, merge layers together, transform to UTM, convert UTM to km rather than meters and finally create a mesh. 
 ```{r, eval=T, echo=TRUE}
 ICESareas <- readShapePoly(file.path(path,"ICES_Areas_20160601_dense"))
 NorthSea  <- subset(ICESareas,SubArea==4)
@@ -105,21 +105,29 @@ NS.border <- inla.sp2segment(NorthSeaUTM)
 NS.border$loc <- NS.border$loc/1000
 ```
 
-Now that we have the tow possible boundaries to use for the mesh, we can generate a mesh with each. The generation of the mesh is done using inla.mesh.2d(). That function takes several arguments, incuding "cutoff" and "max.edge". The max.edge argument specifies the largest allowable edge length for the for the triangles in the mesh. Hence, these arguments specify how fine the final mesh will be. Finer meshes will be able to capture smaller scale spatial correlations, but require more computing time in the inla model.
+Now that we have the tow possible boundaries to use for the mesh, we can generate a mesh with each the boundaries. The generation of the mesh is done using inla.mesh.2d(). That function takes several arguments, including "cutoff" and "max.edge". These arguments specify how fine the final mesh will be. The max.edge argument specifies the largest allowable edge length for the for the triangles in the mesh. The corners of the triangles are called vertices. Finer meshes will be able to capture smaller scale spatial correlations, but require more computing time in the inla model.  
 
 ```{r, eval=T, echo=TRUE}
 mesh1a  <- inla.mesh.2d(boundary = ConvHull,  max.edge=c(40))
 mesh1b  <- inla.mesh.2d(boundary=NS.border, cutoff=3,max.edge=c(40))
 ```
 
-The meshes can be plotted using the plot() function on the mesh object. Once the mesh is plotted, the locations of the samples (stored in the Loc object) can be overlayed using points(). Below, the two meshes are plotted side-by-side.
+The number of vertices is stored in mesh1a$n and mesh1b$n. In our example, the number of verices for mesh1a is `r mesh1a$n`. A mesh with ~ 1000 vertices seems like a good trade-off between computation time and precision of our estimates.
+
+The meshes can be plotted using the plot() function on the mesh object. Once the mesh is plotted, the locations of the samples (stored in the Loc object) can be overlayed using points(). Below, the two meshes are plotted side-by-side, together with a map in UTM coordinates.
 
 ```{r, eval=T, echo=TRUE, dpi=600}
+wld <- map('world', xlim=c(-5,15), ylim=c(47,62),plot=FALSE)
+UTMmap <- project(cbind(wld$x, wld$y), "+proj=utm +zone=31U ellps=WGS84")
+UTMmapFinal <- data.frame("xm"  =UTMmap[,1]/1e3, "ym" = UTMmap[,2]/1e3)
+ 
 par(mfrow=c(1,2))
 plot(mesh1a)
-points(Loc, col = 1, pch = 16, cex = 0.3)
+lines(UTMmapFinal, lwd=2)
+points(Loc, col = 2, pch = 16, cex = 0.3)
 plot(mesh1b)
-points(Loc, col = 1, pch = 16, cex = 0.3)
+lines(UTMmapFinal, lwd=2)
+points(Loc, col = 2, pch = 16, cex = 0.3)
 ```
 
 ## Making the projector matrix and the spde 
@@ -299,12 +307,6 @@ grid     <- expand.grid(x = wproj$x, y = wproj$y)
 grid$zm  <- as.vector(wm.pm100100)   
 grid$zsd <- as.vector(wsd.pm100100)   
 
-wld <- map('world', xlim=c(-5,15), ylim=c(47,62),plot=FALSE)
-wld <- data.frame(lon=wld$x, lat=wld$y)
-
-UTMmap <- project(cbind(wld$lon, wld$lat), "+proj=utm +zone=31U ellps=WGS84")
-UTMmapFinal <- data.frame("xm"  =UTMmap[,1]/1e3, "ym" = UTMmap[,2]/1e3)
-
 p1 <- levelplot(zm ~ x * y  ,
           data = grid, 
           scales = list(draw = TRUE),
@@ -416,12 +418,6 @@ grid     <- expand.grid(x = wproj$x, y = wproj$y)
 grid$zm  <- as.vector(wm.pm1km2)   
 grid$zsd <- as.vector(wsd.pm1km2)   
 
-wld <- map('world', xlim=c(-5,15), ylim=c(47,62),plot=FALSE)
-wld <- data.frame(lon=wld$x, lat=wld$y)
-
-UTMmap <- project(cbind(wld$lon, wld$lat), "+proj=utm +zone=31U ellps=WGS84")
-UTMmapFinal <- data.frame("xm"  =UTMmap[,1]/1e3, "ym" = UTMmap[,2]/1e3)
-
 p1 <- levelplot(zm ~ x * y  ,
           data = grid, 
           scales = list(draw = TRUE),
@@ -514,12 +510,6 @@ wsd.pm100100 <- inla.mesh.project(wproj, I3nb$summary.random$w$sd)
 grid     <- expand.grid(x = wproj$x, y = wproj$y)
 grid$zm  <- as.vector(wm.pm100100)   
 grid$zsd <- as.vector(wsd.pm100100)   
-
-wld <- map('world', xlim=c(-5,15), ylim=c(47,62),plot=FALSE)
-wld <- data.frame(lon=wld$x, lat=wld$y)
-
-UTMmap <- project(cbind(wld$lon, wld$lat), "+proj=utm +zone=31U ellps=WGS84")
-UTMmapFinal <- data.frame("xm"  =UTMmap[,1]/1e3, "ym" = UTMmap[,2]/1e3)
 
 p1 <- levelplot(zm ~ x * y  ,
           data = grid, 
@@ -648,12 +638,6 @@ for (i in unique(w.st$w.group)){
     w.pm1km2 <- inla.mesh.project(wproj,w.pm[w.st$w.group==i])
     grid[grid$year==years[i],]$zm <- as.vector(w.pm1km2)  
 }
-
-wld <- map('world', xlim=c(-5,15), ylim=c(47,62),plot=FALSE)
-wld <- data.frame(lon=wld$x, lat=wld$y)
-
-UTMmap <- project(cbind(wld$lon, wld$lat), "+proj=utm +zone=31U ellps=WGS84")
-UTMmapFinal <- data.frame("xm"  =UTMmap[,1]/1e3, "ym" = UTMmap[,2]/1e3)
 
 p1 <- levelplot(zm ~ x * y|as.factor(year)  ,
           data = grid, 
