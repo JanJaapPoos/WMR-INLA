@@ -70,9 +70,10 @@ We plot a quick histogram of the counts to give us an impression of the statisti
 
 ```{r, eval=T, echo=TRUE, dpi=600}
 par(mfrow=c(1,3))
-hist(cpue_subset[cpue_subset$Survey == "BTS",]$NoPerHaul, 200, xlab= "Number per haul", main="Counts per haul BTS")
-hist(cpue_subset[cpue_subset$Survey == "NSIBTS" &cpue_subset$Quarter == 1,]$NoPerHaul, 200, xlab= "Number per haul", main="Counts per haul IBTS q1")
-hist(cpue_subset[cpue_subset$Survey == "NSIBTS" &cpue_subset$Quarter == 3,]$NoPerHaul, 200, xlab= "Number per haul", main="Counts per haul IBTS q3")
+xl <- "Number per haul"
+hist(cpue_subset[cpue_subset$Survey == "BTS",]$NoPerHaul, 200, xlab= xl, main="Counts per haul BTS")
+hist(cpue_subset[cpue_subset$Survey == "NSIBTS" &cpue_subset$Quarter == 1,]$NoPerHaul, 200, xlab= xl, main="Counts per haul IBTS q1")
+hist(cpue_subset[cpue_subset$Survey == "NSIBTS" &cpue_subset$Quarter == 3,]$NoPerHaul, 200, xlab= xl, main="Counts per haul IBTS q3")
 
 ```
 
@@ -239,22 +240,25 @@ Plot the histograms of observations and fits for all models.
 idx <- inla.stack.index(Stack1, tag= 'Fit')$data
 
 par(mfrow=c(2,2))
-pos <- barplot(log(table(cpue_subset$NoPerHaul)),names.arg=as.numeric(names(table(cpue_subset$NoPerHaul))),ylim=c(0,log(max(table(cpue_subset$NoPerHaul),na.rm=T))*1.3),main="Poisson model")
+yl <- c(0,log(max(table(cpue_subset$NoPerHaul),na.rm=T))*1.3)
+names.arg <- as.numeric(names(table(cpue_subset$NoPerHaul)))
 breaks <- c(as.numeric(names(table(cpue_subset$NoPerHaul))),1000)
-points(y=log(table(cut(I1p$summary.fitted.values[idx,"mean"],breaks=breaks))),x=pos[,1],col=2,pch=19)
+ltable <- log(table(cpue_subset$NoPerHaul))
 
-pos <- barplot(log(table(cpue_subset$NoPerHaul)),names.arg=as.numeric(names(table(cpue_subset$NoPerHaul))),ylim=c(0,log(max(table(cpue_subset$NoPerHaul),na.rm=T))*1.3),main="Negative binomial model")
-breaks <- c(as.numeric(names(table(cpue_subset$NoPerHaul))),1000)
-points(y=log(table(cut(I1nb$summary.fitted.values[idx,"mean"],breaks=breaks))),x=pos[,1],col=2,pch=19)
+pos <- barplot(ltable, names.arg = names.arg, ylim = yl, main = "Poisson model")
+points(y=log(table(cut(I1p$summary.fitted.values[idx,"mean"], breaks=breaks))), x = pos[,1], col=2, pch=19)
 
-pos <- barplot(log(table(cpue_subset$NoPerHaul)),names.arg=as.numeric(names(table(cpue_subset$NoPerHaul))),ylim=c(0,log(max(table(cpue_subset$NoPerHaul),na.rm=T))*1.3),main="ZIP model")
-breaks <- c(as.numeric(names(table(cpue_subset$NoPerHaul))),1000)
-points(y=log(table(cut(I1zip$summary.fitted.values[idx,"mean"],breaks=breaks))),x=pos[,1],col=2,pch=19)
+pos <- barplot(ltable, names.arg = names.arg, ylim = yl, main = "Negative binomial model")
+points(y=log(table(cut(I1nb$summary.fitted.values[idx,"mean"], breaks=breaks))), x = pos[,1], col=2, pch=19)
 
-pos <- barplot(log(table(cpue_subset$NoPerHaul)),names.arg=as.numeric(names(table(cpue_subset$NoPerHaul))),ylim=c(0,log(max(table(cpue_subset$NoPerHaul),na.rm=T))*1.3),main="ZINB model")
-breaks <- c(as.numeric(names(table(cpue_subset$NoPerHaul))),1000)
-points(y=log(table(cut(I1zinb$summary.fitted.values[idx,"mean"],breaks=breaks))),x=pos[,1],col=2,pch=19)
+pos <- barplot(ltable, names.arg = names.arg, ylim = yl, main = "ZIP model")
+points(y=log(table(cut(I1zip$summary.fitted.values[idx,"mean"], breaks=breaks))), x = pos[,1], col=2, pch=19)
+
+pos <- barplot(ltable, names.arg = names.arg, ylim = yl, main = "ZINB model")
+points(y=log(table(cut(I1zinb$summary.fitted.values[idx,"mean"], breaks=breaks))), x = pos[,1], col=2, pch=19)
 ```
+
+Get the spatial correlation information out of the model.
 
 ```{r, eval=T, echo=T}
 # Spatial info
@@ -337,7 +341,6 @@ p2 <- levelplot(zsd ~ x * y,
 grid.arrange(p1,p2, ncol=2)
   
 ```
-
 
 ## Using swept area estimates
 Rather than using time as a measure of effort, we will use surface. That will allow us to make predictions on the number of individuals caught per unit area. Because of the log link, the surfaces are log transformed (and named "lsurface"). Remember that the units of surface were km2. 
@@ -707,244 +710,45 @@ plot(x = d.vec, y = Cor.M,
 abline(h = 0.1, lty = 2)
 ```
 
+Save the INLA results
 
-## Simlulate data by sampling from posterior (from I4nb)
-
-Next we want to simulate a number realizations and integrate over surface (per year) so that we get a population level estimate.  
-
-```{r, eval=T, echo=T}
-# Simulate regression parameters using inla.posterior.sample 
-# to simulate from the model. The output is stored in the Sim object.
-set.seed(1234)
-NSim <- 1000
-Sim <- inla.posterior.sample(n = NSim, result = I4nb)
-```
-
-In this example, we thus sample `r NSim` times. The Sim object is a list of length NSim. Each element of  this list contains a single realization. Let's have a closer look.
-
-```{r, eval=T, echo=T}
-names(Sim[[1]])
-
-#get out names of different types of rows in latent
-rnames <- rownames(Sim[[1]]$latent)
-rtypes <- unique(unlist(lapply(strsplit(rnames,":"),function(x){x[1]})))
-rtypes
-```
-Now, there are a number of different types of rows in latent: APredictor, Predictor, W, Depth, and the fixed effects.
-
-```{r, eval=T, echo=T}
-#to get the w par realizations out: 
-rtypes[3]
-wrownum <- grep(paste0("^",rtypes[3]),rownames(Sim[[1]]$latent))
-wmat <- sapply(Sim, function(x) {x$latent[wrownum]})
-dim(wmat)
-
-#to get the depth realizations out: 
-rtypes[4]
-drownum <- grep(paste0("^",rtypes[4]),rownames(Sim[[1]]$latent))
-dmat <- sapply(Sim, function(x) {x$latent[drownum]})
-dim(dmat)
-
-#to get the fixed effect par realizations out (1:4 now because depth was added) 
-fixed <- rtypes[-(1:4)]
-lrownum <- unlist(lapply(fixed, function(x) {grep(x, rownames(Sim[[1]]$latent), fixed = TRUE)}    ))
-linmat <- sapply(Sim, function(x) {x$latent[lrownum]})
-dim(linmat)
-dimnames(linmat)[[1]] <- fixed
-```
-The second dimensions of wmat, dmat and linmat are equal to the number of simulations, here `r NSim`. The first dimension of wmat is equal to ... . The first dimension of dmat is equal to the number of depths in the original dataset, see for instance length(unique(cpue_subset$Depth)). We do not have all depths in the depth range in our original dataset, so some interpolation is required.
-
-We'll use the approx function to do a linear interpolation using the approx function. In that function we can specify the x and y values for which we have information, and estimate the y values at each depth in the grid using the xout argument.
-
-First, we'll need the depth at each grid cell. The locations are in the wproj object as wproj$x and wproj$y. However, the x and y in the gam model that we use are called Xkm and Ykm. Thus, we need some translation first.
-
-A quick plot of the depths (with predictions between 0 and 250 m reveals that the depths are OK. Check if this is still the case when plotting the depths object (that is a matrix with sizes equal to wproj)
-```{r, eval=T, echo=T}
-
-fullgrid <- expand.grid(Xkm=wproj$x, Ykm = wproj$y )
-
-fullgrid$depth <- predict(depthmodel, newdata=fullgrid) 
- levelplot(depth ~ Xkm * Ykm,  data = fullgrid, at=seq(0,250,10))
- 
-depths <- matrix(fullgrid$depth, nrow=length(wproj$x),ncol=length(wproj$y), dimnames = list("x" = wproj$x, "y" = wproj$y))
-
-#constrain depths to be within min and max observed depths (otherwise interpolation will fail later)
-depths <- apply(depths, c(1, 2), function(x) min(max(x,min(cpue_subset$Depth)),max(cpue_subset$Depth)))
-
-#take only depths where our grid is (by using info from earlier plot)
-depths[is.na(w.pm1km2)] <- NA 
-image(depths)
-```
-
-length(wm.pm1km2[!is.na(wm.pm1km2)]) contains surface of grid in km2, because it was generated as a 1 by 1 km grid. 
-
-```{r, eval=T, echo=T}
-
-numbers <- matrix(NA, ncol=length( startyr:2017), nrow=NSim, dimnames=list("sim"=1:NSim,"year"=startyr:2017))
-
-#we will need to extract correct group from spatiotemporal w. Those are numbered 1:xxx.
-# we make a separate counter names gg starting at 1
-gg <- 1
-
-for (ii in startyr:2017){
-  for (jj in 1:NSim){
-               #intercept  +           year        +  ( 0 times beta for lsurface (so we get 1 km))
-    if (ii==startyr){
-      lin <- linmat["Intercept",jj] +                                 0 * linmat["lsurface",jj]
-    }else{
-      lin <- linmat["Intercept",jj] + linmat[paste0("fYear",ii),jj] + 0 * linmat["lsurface",jj]
-    }
-    
-    # section below is for including spatial corr. Now we have to select the group. 
-    wm.pm1km2  <- inla.mesh.project(wproj, wmat[w.st$w.group==gg,jj])
-
-    # merging depth in?
-    dd <- approx(x=unique(cpue_subset$Depth),y=dmat[,jj], xout=c(depths))$y
-    dm.pm1km2 <-  matrix(dd, nrow=length(wproj$x),ncol=length(wproj$y), dimnames=list("x"=wproj$x,
-                                                                                      "y"=wproj$y))
-
-    #only take dm and wm values only where wm.pm1km2 non-NAs
-    dm.pm1km2 <- dm.pm1km2[!is.na(wm.pm1km2)]
-    wm.pm1km2 <- wm.pm1km2[!is.na(wm.pm1km2)]
-
-    res <- exp(lin + wm.pm1km2 + dm.pm1km2)
-    numbers[jj,as.character(ii)] <- sum(rnbinom(n = length(res), mu = res, size = I4nb$summary.hyperpar$mean[1]))
-  }
-  gg <- gg+1
-}
-```
-
-Number is the estimated number for the entire surface of the grid
-what are the conf bounds for numbers per year?
-
-```{r, eval=T, echo=T}
-qnumbers <- apply(numbers,2, quantile,c(0.025,0.5,0.975))
-
-plot(qnumbers[2,]/1e6, xlab="Years", ylab="Population numbers (millions)", las=1, type="l", ylim=c(0,max(qnumbers)), xaxt='n', yaxs="i")
-lines(qnumbers[1,]/1e6, lty=2)
-lines(qnumbers[3,]/1e6, lty=2)
-axis(1,at=1:length(startyr:2017), labels= startyr:2017)
-```
-
-What are the average weights per year?
-To go from number to weight we need alpha and beta from growth curve (for length in cm and resulting W is in g )
-alpha=0.156650
-beta=2.190 ref is Bedford et al. 1986
-
-```{r, eval=T, echo=T}
-alpha <- 0.156650
-beta <- 2.190
-full_cpue$wt <-  (alpha * (full_cpue$LngtClass/10)^beta * full_cpue$NoPerHaul) /1000
-annualmnwt <- aggregate(cbind(wt,NoPerHaul) ~ Year, data= full_cpue,  FUN= "sum") 
-annualmnwt <- within(annualmnwt, mnwt <- wt/NoPerHaul)
-
-plot(mnwt~Year, data=annualmnwt, type="b", ylab="Mean weight (kg)", ylim=c(0,max(mnwt)),las=1)
-```
-
-Multiply weights by population numbers to get estimated population biomass. Divide by 1e6 to go from kg to 1000 tonnes. 
-
-```{r, eval=T, echo=T}
-qwts <- annualmnwt[annualmnwt$Year >= startyr,]$mnwt * qnumbers / 1e6
+```{r, eval=T, echo=T, dpi=600}
+save.image(file.path(path,"INLA_results.Rdata"))
 ```
 
 
-```{r, eval=T, echo=T}
-plot(qwts[2,], xlab="Years", ylab="Stock Biomass (1000 tonnes)", las=1, type="l", ylim=c(0,max(qwts)), xaxt='n',yaxs="i")
-lines(qwts[1,], lty=2)
-lines(qwts[3,], lty=2)
-axis(1,at=1:length(startyr:2017), labels= startyr:2017)
+## Encore2: test if relative survey catchabilities are changing? 
+
+The stack needs to be updated to include year.
+```{r, eval=F, echo=T}
+N <- nrow(cpue_subset)
+Stack1 <- inla.stack(
+    tag  = "Fit",
+    data = list(y = cpue_subset$NoPerHaul),    
+    A    = list(1,1,1,1, A1),                      
+    effects = list( 
+       Intercept=rep(1,N),
+       X=X, #Covariates
+       Depth = cpue_subset$Depth,
+       Year = cpue_subset$Year,
+       w = w.st))                  #Spatial field
+```
+
+The model formula also needs to be updated.
+```{r, eval=F, echo=T}
+#6.	Specify the model formula
+fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde, group = w.group, control.group = list(model = 'ar1'))", ' f(Depth,model="rw2")', ' f(Year,group=fSurvey,model="rw2")'), collapse =" + ")))
+```
+
+The new model is called I5nb.
+```{r, eval=F, echo=T}
+INLA:::inla.dynload.workaround() 
+I5nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
+           control.compute = list(dic = TRUE, waic = TRUE, config=TRUE, openmp.strategy="large"),
+           control.predictor = list(A = inla.stack.A(Stack1)))
+
+summary(I5nb)
 ```
 
 
-## Simlulate data by sampling from posterior, but now from simpler model (I2nb; without depth and only spatial corr)
 
-
-```{r, eval=T, echo=T}
-
-# Simulate from model I1nb
-set.seed(1234)
-NSim <- 1000
-Sim <- inla.posterior.sample(n = NSim, result = I2nb)
-```
-
-In this example, we thus sample `r NSim` times. The Sim object is a list of length NSim. Each element of  this list contains a single realization. Let's have a closer look.
-
-```{r, eval=T, echo=T}
-names(Sim[[1]])
-
-#get out names of different types of rows in latent
-rnames <- rownames(Sim[[1]]$latent)
-rtypes <- unique(unlist(lapply(strsplit(rnames,":"),function(x){x[1]})))
-rtypes
-```
-
-```{r, eval=T, echo=T}
-#to get the w par realizations out: 
-rtypes[3]
-wrownum <- grep(paste0("^",rtypes[3]),rownames(Sim[[1]]$latent))
-wmat <- sapply(Sim, function(x) {x$latent[wrownum]})
-dim(wmat)
-
-#to get the fixed effect par realizations out 
-fixed <- rtypes[-(1:3)]
-lrownum <- unlist(lapply(fixed, function(x) {grep(x, rownames(Sim[[1]]$latent), fixed = TRUE)}    ))
-linmat <- sapply(Sim, function(x) {x$latent[lrownum]})
-dim(linmat)
-dimnames(linmat)[[1]] <- fixed
-```
-
-
-```{r, eval=T, echo=T}
-numbers <- matrix(NA, ncol=length( startyr:2017), nrow=NSim, dimnames=list("sim"=1:NSim,"year"=startyr:2017))
-
-#we will need to extract correct group from spatiotemporal w. Those are numbered 1:xxx.
-# we make a separate counter names gg starting at 1
-
-for (ii in startyr:2017){
-  for (jj in 1:NSim){
-               #intercept  +           year        +  ( 0 times beta for lsurface (so we get 1 km))
-    if (ii==startyr){
-      lin <- linmat["Intercept",jj] +                                 0 * linmat["lsurface",jj]
-    }else{
-      lin <- linmat["Intercept",jj] + linmat[paste0("fYear",ii),jj] + 0 * linmat["lsurface",jj]
-    }
-    
-    # section below is for including spatial corr. Now we have to select the group. 
-    wm.pm1km2  <- inla.mesh.project(wproj, wmat[,jj])
-
-    #only take wm values only where wm.pm1km2 non-NAs
-    wm.pm1km2 <- wm.pm1km2[!is.na(wm.pm1km2)]
-
-    res <- exp(lin + wm.pm1km2 )
-    numbers[jj,as.character(ii)] <- sum(rnbinom(n = length(res), mu = res, size = I2nb$summary.hyperpar$mean[1]))
-  }
-}
-```
-
-Number is the estimated number for the entire surface of the grid
-what are the conf bounds for numbers per year?
-
-```{r, eval=T, echo=T}
-qnumbers <- apply(numbers,2, quantile,c(0.025,0.5,0.975))
-
-plot(qnumbers[2,]/1e6, xlab="Years", ylab="Population numbers (millions)", las=1, type="l", ylim=c(0,max(qnumbers)), xaxt='n', yaxs="i")
-lines(qnumbers[1,]/1e6, lty=2)
-lines(qnumbers[3,]/1e6, lty=2)
-axis(1,at=1:length(startyr:2017), labels= startyr:2017)
-```
-
-```{r, eval=T, echo=T}
-qwts <- annualmnwt[annualmnwt$Year >= startyr,]$mnwt * qnumbers / 1e6
-```
-
-```{r, eval=T, echo=T}
-plot(qwts[2,], xlab="Years", ylab="Stock Biomass (1000 tonnes)", las=1, type="l", ylim=c(0,max(qwts)), xaxt='n')
-lines(qwts[1,], lty=2)
-lines(qwts[3,], lty=2)
-axis(1,at=1:length(startyr:2017), labels= startyr:2017)
-```
-
-Save image
-```{r, eval=T, echo=T}
-save.image("INLA_results2.Rdata")
-```
