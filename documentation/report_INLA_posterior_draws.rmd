@@ -75,7 +75,7 @@ First, we'll need the depth at each grid cell. The locations are in the wproj ob
 A quick plot of the depths (with predictions between 0 and 250 m reveals that the depths are OK. Check if this is still the case when plotting the depths object (that is a matrix with sizes equal to wproj)
 ```{r, eval=T, echo=T}
 
-fullgrid <- expand.grid(Xkm=wproj$x, Ykm = wproj$y )
+fullgrid <- expand.grid(Xkm=unique(wproj$x), Ykm = unique(wproj$y))
 
 fullgrid$depth <- predict(depthmodel, newdata=fullgrid) 
 levelplot(depth ~ Xkm * Ykm,  data = fullgrid, at=seq(0,250,10))
