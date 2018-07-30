@@ -152,7 +152,7 @@ full_cpue$wt <-  (alpha * (full_cpue$LngtClass/10)^beta * full_cpue$NoPerHaul) /
 annualmnwt <- aggregate(cbind(wt,NoPerHaul) ~ Year, data= full_cpue,  FUN= "sum") 
 annualmnwt <- within(annualmnwt, mnwt <- wt/NoPerHaul)
 
-plot(mnwt~Year, data=annualmnwt, type="b", ylab="Mean weight (kg)", ylim=c(0,max(mnwt)),las=1)
+plot(mnwt~Year, data=annualmnwt, type="b", ylab="Mean weight (kg)", ylim=c(0,max(mnwt, na.rm = T)),las=1)
 ```
 
 Multiply weights by population numbers to get estimated population biomass. Divide by 1e6 to go from kg to 1000 tonnes. 
