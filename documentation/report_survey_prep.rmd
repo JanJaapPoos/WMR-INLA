@@ -29,6 +29,7 @@ library(lattice); library(latticeExtra); library(grid); library(gridExtra);
 library(rgdal); library(rgeos); 
 library(mapdata); library(maptools)
 ```
+R rotates the values on the y-axes when using the plot command by default. In order to plot the values on the y-axes horizontally we set the graphical parameter named "las" to one by `par(las=1)`.     
 
 ## The IBTS data
 
@@ -46,7 +47,7 @@ The lengths are stored in mm and the CPUE is stored as number per hour. "Zero ha
 ```{r, eval=T, echo=TRUE}
 IBTS$NoPerHaul <- round(IBTS$CPUE_number_per_hour*(IBTS$HaulDur/60))
 
-IBTS <- within(IBTS, haulCode <-  paste0(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong))
+IBTS <- within(IBTS, haulCode <- paste0(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong))
 ```
 
 To get swept area information for the IBTS we need to read in the HH records of the IBTS. These HH records are available in the IBTS exchange files. The swept areas can be calculated from the travelled distance and the door spread or wing spread. Missing values for thease variables are coded as -9. In the r code those are made into NAs. We make a haul identifier for the hauls like we did for the count data. 
@@ -54,7 +55,7 @@ To get swept area information for the IBTS we need to read in the HH records of 
 ```{r, eval=T, echo=T}
 IBTSHH <- read.csv(file.path(path,"Exchange Data_2017-07-14 09_26_25.csv"), stringsAsFactors = F)
 
-IBTSHH <- within(IBTSHH, haulCode <-  paste0(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong))
+IBTSHH <- within(IBTSHH, haulCode <- paste0(Year, Survey, Quarter, Ship, HaulNo, ShootLat, ShootLong))
 
 IBTSHH[IBTSHH$DoorSpread == -9,]$DoorSpread <- NA
 IBTSHH[IBTSHH$Distance == -9,]$Distance <- NA
@@ -63,7 +64,7 @@ IBTSHH[IBTSHH$WingSpread == -9,]$WingSpread <- NA
 
 Next, we plot a histogram of haul duration, a scatterplot of distance versus haul duration, and a scatterplot of doorspread versus wingspread to get a look at the data. Clearly, haul duration is stored in minutes, with most of the hauls being either 30 minutes or 1 hour. Hauls longer than 80 minute are removed because these contain a large proportion of outliers with respect to e.g. distance. This step removes `r sum(IBTSHH$HaulDur > 80)` from the `r nrow(IBTSHH)` hauls.
 
-The wing spread and doorspread are stored in meters, with wing spreads being in the range `r range(IBTSHH$WingSpread, na.rm=T)` meters and doorspread being in the range  `r range(IBTSHH$DoorSpread, na.rm=T)` meters. There is one clear outlier 
+The wing spread and doorspread are stored in meters, with wing spreads being in the range `r range(IBTSHH$WingSpread, na.rm=T)` meters and doorspread being in the range `r range(IBTSHH$DoorSpread, na.rm=T)` meters. There is one clear outlier 
 
 ```{r, eval=TRUE, echo=TRUE, dpi=600}
 par(mfrow=c(1,3))
@@ -77,7 +78,7 @@ plot(IBTSHH$WingSpread,IBTSHH$DoorSpread, pch=20, xlab="Wingspread (m)", ylab= "
 abline(a=0,b=1, lty=2)
 ```
 
-A surface is calculated by multiplying  wing spread by distance. Both are in metres. The resulting surface is thus in m2. This is converted to km2 by dividing by 1e+06.
+A surface is calculated by multiplying wing spread by distance. Both are in metres. The resulting surface is thus in m2. This is converted to km2 by dividing by 1e+06.
 ```{r, eval=T, echo=T}
 IBTSHH$surface <- (IBTSHH$Distance * IBTSHH$WingSpread)/1e+06
 ```
@@ -95,12 +96,12 @@ summary(linmod)
 abline(linmod, lty=2)
 ```
 
-Indeed, there is a good relationship, where each minute of haul duration adds `coef(linmod)` km2 haul surface for the IBTS. This relationship is used to calculate the surface of hauls where only haul duration is known.   
+Indeed, there is a good relationship, where each minute of haul duration adds `coef(linmod)` km2 haul surface for the IBTS. This relationship is used to calculate the surface of hauls where only haul duration is known. 
 ```{r, eval=TRUE, echo=TRUE, dpi=600}
 IBTSHH[is.na(IBTSHH$surface),]$surface <- as.numeric(predict(linmod,newdata=IBTSHH))[is.na(IBTSHH$surface)]
 ```
 
-Merge the haul information to the full cpue set, after removing haulduration from the  haul data (because we have it in the CPUE set already)
+Merge the haul information to the full cpue set, after removing haulduration from the haul data (because we have it in the CPUE set already)
 ```{r, eval=T, echo=T}
 IBTSHH$HaulDur <- NULL
 IBTS <- merge(IBTS, IBTSHH,by= "haulCode", all.x=T, all.y=F)
@@ -113,7 +114,7 @@ After this merge, there are `nrow(IBTS[is.na(IBTS$surface),])` observation in th
 We have a similar but slightly different data set for BTS. Here, the "zero hauls" have lengthclass NA and the number per haul is NA. These observations are then set to zero, so that we have the same structure as in the IBTS data set. 
 
 ```{r, eval=TRUE, echo=TRUE}
-BTS  <- read.csv(file.path(path,"CPUE per length per Hour and Swept Area_2017-07-12 11_29_36.csv"), stringsAsFactors = F)
+BTS <- read.csv(file.path(path,"CPUE per length per Hour and Swept Area_2017-07-12 11_29_36.csv"), stringsAsFactors = F)
 
 BTS[is.na(BTS$LngtClass),]$NoPerHaul <- 0
 BTS[is.na(BTS$LngtClass),]$LngtClass <- 0
@@ -125,7 +126,7 @@ table(BTS$Ship, BTS$Year)
 ```
 The BTS swept area estimate is rounded, and thus not very useful. That's why we will recalculate it: the distance and beam width are in m, so the surface is in m2, and divided by 1e+06 to get km2
 ```{r, eval=TRUE, echo=TRUE}
-# there are some negative distances. We make those  NA, and infer their surface later 
+# there are some negative distances. We make those NA, and infer their surface later 
 BTS[!is.na(BTS$Distance) & BTS$Distance < 0,]$Distance <- NA
 
 #now calculate surface
@@ -146,7 +147,7 @@ abline(linmod, lty=2)
 BTS[is.na(BTS$surface),]$surface <- as.numeric(predict(linmod,newdata=BTS))[is.na(BTS$surface)]
 ```
 
-Indeed, there is a good relationship, where each minute of haul duration adds `coef(linmod)` km2 haul surface for BTS. This relationship is used to calculate the surface of hauls where only haul duration is known.   
+Indeed, there is a good relationship, where each minute of haul duration adds `coef(linmod)` km2 haul surface for BTS. This relationship is used to calculate the surface of hauls where only haul duration is known. 
 
 Next, we make a unique haul code for the BTS, as we did for IBTS
 ```{r, eval=TRUE, echo=TRUE}
@@ -178,7 +179,7 @@ rm(hxl)
 After we merged all possible combinations with the data we now have NAs for those lengts and hauls where the catch is zero, and so we set those to zero. This data is subsequently merged to the trawllist so that we have all information together. 
 ```{r, eval=TRUE, echo=TRUE}
 full_cpue[is.na(full_cpue$NoPerHaul),]$NoPerHaul <- 0
-full_cpue  <- merge(full_cpue,trawllist, all.x=T)
+full_cpue <- merge(full_cpue,trawllist, all.x=T)
 ```
 
 The records that have lenghts equal to zero (that indicated zero hauls in our original set ) now need to be removed because we have all the information we need (these hauls now have zero catch for the full length range observed in the survey). 
@@ -254,7 +255,7 @@ preds <- predict(depthmodel,newdata= data.frame(Xkm=Xkms,Ykm=Ykms ))
 
 plot(Xkms,Ykms, pch=20,
 col=rev(tim.colors(15, alpha = 1))[cut(preds,20)], 
-xlab= "Easting (km)", ylab="Northing (km)", las=1)
+xlab= "Easting (km)", ylab="Northing (km)")
 
 ``` 
 
