@@ -29,7 +29,15 @@ library(mapdata); library(maptools)
 
 load(file.path(path,"survey_data.Rdata"))
 ```
-R rotates the values on the y-axes when using the plot command by default. In order to plot the values on the y-axes horizontally we set the graphical parameter named "las" to one by `par(las=1)`.     
+R rotates the values on the y-axes when using the plot command by default. In order to plot the values on the y-axes horizontally we set the graphical parameter named "las" to one by `par(las=1)`.   
+
+### The data 
+
+```{r, eval=T, results="hide", echo=TRUE, message=FALSE, warning=FALSE}
+head(full_cpue)
+```
+
+
 
 ### Subsetting and length aggregation
 
