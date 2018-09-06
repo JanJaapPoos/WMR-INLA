@@ -305,7 +305,7 @@ Cor.M[1] <- 1
 par(mfrow=c(1,1))
 plot(x = d.vec, y = Cor.M, 
      type = "l", 
-     xlab = "Distance", 
+     xlab = "Distance (km)", 
      ylab = "Correlation")
 abline(h = 0.1, lty = 2)
 ```
