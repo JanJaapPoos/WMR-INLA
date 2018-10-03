@@ -147,7 +147,7 @@ points(Loc, col = 2, pch = 16, cex = 0.3)
 Once the 2d mesh is made we construct a observation/prediction weight matrix for the model. This is also called the "projector matrix".
 ```{r, eval=T, echo=TRUE}
 # 2. Define the weighting factors a_ik (also called the projector matrix).
-A1 <- inla.spde.make.A(mesh=mesh1a, loc=Loc)
+A1 <- inla.spde.make.A(mesh = mesh1a, loc=Loc)
 dim(A1)
 ```
 The first dimension of the projector matrix has the size of the number of observations (here `r dim(A1)[1]`), and the second dimension of the projector matrix is the number of nodes in the mesh (here `r dim(A1)[2]`).
@@ -244,6 +244,14 @@ The negative binomial model has the lowest DIC and WAIC. Let's see the summary o
 ```{r, eval=T, echo=T}
 summary(I1nb)
 ```
+The summary displays the call to INLA, some information about the time needed to process the model, information about the fixed effects, random effects, model hyperparameters, and several information criteria. The fixed effects include the intercept and all parameter valuse for the factor variable years. The number of parameter estimates for years is equal the the total number of years in the model minus 1. Likewise, there are two surveys in the data, and the number of parameter estimates in the model is two minus one: only the parameter estimate for the difference between the IBTS and BTS is given. The parameter estimate named "lhauldur" gives the linear predictor for the effect of log haul duration.
+
+The model output indicates that there are random effects for the SPDE2 model.
+
+In this case the model "hyperparameters" provide information about the overdispersion parameter in the negative binomial distribution. Remember that the variance in a negative binomial distribution is equal to mu + mu^k
+
+The two theta parameters describe the spatial field w. Theta2 is equal to  $\log(\kappa)$. Theta1 is equal to $\log(\tau)$ = $ - log(4 \pi \kappa^2 \sigma_{u}^2)/2$. Kappa is a parameter in the Matern correlation function, that defines the rate of decline in the correlation. Large $\kappa$ values indicate a fast decline in correlation. The Matern correlation function contains two parameters: $\kappa$ and $\nu$. While $\kappa$ is being estimates, $\nu$ is assumed to be equal to 1 by default in INLA. 
+
 Plot the histograms of observations and fits for all models. 
 
 ```{r, eval=T, echo=T, dpi=600}
@@ -268,12 +276,18 @@ pos <- barplot(ltable, names.arg = names.arg, ylim = yl, main = "ZINB model")
 points(y=log(table(cut(I1zinb$summary.fitted.values[idx,"mean"], breaks=breaks))), x = pos[,1], col=2, pch=19)
 ```
 
-Get the spatial correlation information out of the model.
+We mentioned the two theta hyperparamaters earlier, and how they contain the information about the spatial correlation in the model. These hyperparameters  and some derived hyperparameters from the spde can be extracted from the model using inla.spde2.result()
+
+```{r, eval=T, echo=T}
+# extract spde2 results 
+SpatField.w <- inla.spde2.result(inla = I1nb, name = "w", spde = spde, do.transfer = TRUE)
+```
+
+This object contains the hyperparameters and the information about e.g. $\kappa$ and $\sigma_{u}$.
+The parameter $\kappa$ defines the rate of decline in correlation, and the parameters $\sigma_{u}^2$ indicates the variance. Below, we use the inla.emarginal function of inla to compute the expected values for the hyperparameters.   
 
 ```{r, eval=T, echo=T}
 # Spatial info
-SpatField.w <- inla.spde2.result(inla = I1nb, name = "w", spde = spde, do.transfer = TRUE)
-
 Kappa <- inla.emarginal(function(x) x, 
                         SpatField.w$marginals.kappa[[1]] )
 
@@ -286,7 +300,7 @@ range <- inla.emarginal(function(x) x,
 c(Kappa, Sigma_u, range)
 ```
 
-The range is the distance at which the spatial correlation is approxmately 0.1. Below we plot the correlation as a function of distance, with a hortizontal line where the correlation is 0.1.
+The posterior mean of $\kappa$ is `r Kappa` and the posterior mean $\sigma_{u}$ is `r Sigma_u`. The range is the distance at which the spatial correlation is approxmately 0.1. In this case, this range is approximately `r round(range)' km. Below we plot the correlation as a function of distance, with a dashed vertical line at the range and a dashed horizontal line where the correlation is exactly 0.1.
 
 ```{r, eval=T, echo=T,  dpi=600}
 # Show correlation structure
@@ -299,7 +313,7 @@ D <- as.matrix(dist(LocMesh))
 # we can calculate the imposed Matern correlation values.
 d.vec <- seq(0, max(D), length = 100)      
 Cor.M <- (Kappa * d.vec) * besselK(Kappa * d.vec, 1) 
-Cor.M[1] <- 1
+#Cor.M[1] <- 1
 
 # Which we plot here:
 par(mfrow=c(1,1))
@@ -308,6 +322,7 @@ plot(x = d.vec, y = Cor.M,
      xlab = "Distance (km)", 
      ylab = "Correlation")
 abline(h = 0.1, lty = 2)
+abline(v = range, lty = 2)
 ```
 
 
@@ -333,7 +348,7 @@ p1 <- levelplot(zm ~ x * y,
             grid.points(x = cpue_subset$Xkm,
                         y = cpue_subset$Ykm, 
                         pch = 1,
-                        size = unit(cpue_subset$NoPerHaul/15, "char"))  
+                        size = unit(cpue_subset$NoPerHaul/70, "char"))  
           }) + xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
 
 p2 <- levelplot(zsd ~ x * y,
@@ -443,7 +458,7 @@ p1 <- levelplot(zm ~ x * y,
             grid.points(x = cpue_subset$Xkm,
                         y = cpue_subset$Ykm, 
                         pch = 1,
-                        size = unit(cpue_subset$NoPerHaul/15, "char"))  
+                        size = unit(cpue_subset$NoPerHaul/70, "char"))  
           }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
 
 p2 <- levelplot(zsd ~ x * y,
