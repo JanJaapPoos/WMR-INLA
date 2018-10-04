@@ -248,7 +248,7 @@ The summary displays the call to INLA, some information about the time needed to
 
 The model output indicates that there are random effects for the SPDE2 model.
 
-In this case the model "hyperparameters" provide information about the overdispersion parameter in the negative binomial distribution. Remember that the variance in a negative binomial distribution is equal to mu + mu^k
+In this case the model "hyperparameters" provide information about the overdispersion parameter in the negative binomial distribution. Remember that the variance in a negative binomial distribution is equal to $\mu + \mu^{2} / k$. The "size" hyperparameter provides the estimate of $k$. In our case, the estimate of "size" is `r I1nb$summary.hyperpar$mean[1]` and the data is overdispersed (1/overdispersion < 1). 
 
 The two theta parameters describe the spatial field w. Theta2 is equal to  $\log(\kappa)$. Theta1 is equal to $\log(\tau)$ = $ - log(4 \pi \kappa^2 \sigma_{u}^2)/2$. Kappa is a parameter in the Matern correlation function, that defines the rate of decline in the correlation. Large $\kappa$ values indicate a fast decline in correlation. The Matern correlation function contains two parameters: $\kappa$ and $\nu$. While $\kappa$ is being estimates, $\nu$ is assumed to be equal to 1 by default in INLA. 
 
@@ -429,6 +429,10 @@ Z
 summary(I2nb)
 ```
 
+The information for the fixed effects is similar to what was presented for the previous models. However, now the haul duration is replaced by the swept area of the trawls. The swept area is log transformed. We model density as an exponential function of the linear predictor which is linear function of explanatory variable, density = counts/area = $\exp(\eta)$. Hence y=$\exp(\eta)* \exp(\log(area))= $\exp(\eta + \log(area))$. The appealing aspect of this formulation is that the raw data and corresponding probability distribution are retained.
+
+In our case, the estimated parameter for log (area) is close to 1. This is also our expectation: We  
+
 We will plot the spatial mean and sd, but this time with a grid size of 1 by 1 km. Because the sampling locations are on a km grid, we can first find the ranges of the x and y coordinates of the grid, and then have grid cells of size 1.
 ```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
 # we want to make cells of 1 by 1 km. Let's do this first 
@@ -509,6 +513,8 @@ I3nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
 
 summary(I3nb)
 ```
+This model has one more hyperparameter compared to the previous models: the precision for depth, which comes from the rw2 model for depth.
+
 
 The information about the random walk model for the effect of depth on the counts is located in the summary of the random effects. It is stored in a data frame, and we copy it into a new object named Depthm 
 ```{r, eval=T, echo=T}
