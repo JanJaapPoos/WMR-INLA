@@ -734,6 +734,129 @@ plot(x = d.vec, y = Cor.M,
 abline(h = 0.1, lty = 2)
 ```
 
+## Using offset for area  
+
+Note that in code below the names in the model matrix should not contain any special characters! This is why we renamed the "NS-IBTS" survey to "NSIBTS" earlier.
+
+The model formula needs to be updated so that lsurface doe snot end up in fixed effects. 
+```{r, eval=T, echo=T}
+fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)[!names(X)=="lsurface"]," f(w, model = spde, group = w.group, control.group = list(model = 'ar1'))", ' f(Depth,model="rw2")'), collapse =" + ")))
+```
+The new model is called I5nb.
+```{r, eval=T, echo=T}
+INLA:::inla.dynload.workaround() 
+I5nb <- inla(eval(fsp), offset = lsurface, family = "nbinomial", data=inla.stack.data(Stack1),
+           control.compute = list(dic = TRUE, waic = TRUE, config=TRUE, openmp.strategy="large"),
+           control.predictor = list(A = inla.stack.A(Stack1)))
+
+summary(I5nb)
+```
+We compare the information criteria for all swept area models
+```{r, eval=T, echo=T}
+dic  <- c(I2p$dic$dic, I2nb$dic$dic, I3nb$dic$dic, I4nb$dic$dic, I5nb$dic$dic)
+waic <- c(I2p$waic$waic, I2nb$waic$waic, I3nb$waic$waic, I4nb$waic$waic,I5nb$waic$waic)
+Z     <- cbind(dic, waic)
+rownames(Z) <- c("Spatial Poisson model",  "Spatial NB model", "Spatial NB model depth", "Spatial-temporal NB model depth", "Spatial-temporal NB model depth with lsurface as offset",)
+Z
+```
+
+Depth smoother can be plotted again, now for the Negative Binomial model with spatial-temporal correlation.
+```{r, eval=T, echo=T}
+#plot depth smoother
+Depthm <- I5nb$summary.random$Depth
+
+par(mfrow = c(1,1), mar = c(5,5,2,2), cex.lab = 1.5)
+plot(Depthm[,1:2], type='l',
+     xlab = 'Depth (m)', 
+     ylab = 'Smoother',
+     ylim = c(-2, 2) )
+abline(h=0, lty=3)
+lines(Depthm[, c(1, 4)], lty=2)
+lines(Depthm[, c(1, 6)], lty=2)
+rug(cpue_subset$Depth)
+```
+Now we plot the spatial correlation. Because we now have a spatial-temporal model we need to plot one panel per year. The panels are quite small, so we chose not to plot the observations
+```{r, eval=T, echo=T, fig.width=8, fig.height=8, dpi=600}
+# we want to make cells of 1 by 1 km. Let's do this first 
+years <- startyr:endyr
+
+w.pm <- I5nb$summary.random$w$mean
+wproj <- inla.mesh.projector(mesh1a, dims=c(xres,yres), xlim = xl, ylim = yl) 
+
+grid <- expand.grid(year=years, x = wproj$x, y = wproj$y,zm=NA)
+
+for (i in unique(w.st$w.group)){
+    w.pm1km2 <- inla.mesh.project(wproj,w.pm[w.st$w.group==i])
+    grid[grid$year==years[i],]$zm <- as.vector(w.pm1km2)  
+}
+
+p1 <- levelplot(zm ~ x * y|as.factor(year)  ,
+          data = grid, 
+          scales = list(draw = TRUE),
+          xlab = list("Easting", cex = 1),
+          ylab = list("Northing", cex = 1),
+          main = list("Posterior mean spatial random fields", cex = 1),
+          col.regions=tim.colors(25, alpha = 1),
+           strip = strip.custom(style = 1),
+          panel=function(x, y, z, subscripts,...){
+            panel.levelplot(x, y, z, subscripts,...)
+            grid.points(x = cpue_subset[cpue_subset$Year == grid[subscripts[1],]$year,]$Xkm,
+                        y = cpue_subset[cpue_subset$Year == grid[subscripts[1],]$year,]$Ykm, 
+                        pch = 1,
+                        size = unit(0.0005*cpue_subset[cpue_subset$Year ==grid[subscripts[1],]$year,]$NoPerHaul/
+                                    cpue_subset[cpue_subset$Year ==grid[subscripts[1],]$year,]$surface, "char"))  
+          }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
+
+plot(p1)
+```
+
+Next we plot the posterior of the estimated temporal correlation. The drawn red vertical line indicates the mean of the distribution. The dashed line indicate the 0.025 and 0.975 quantiles.
+```{r, eval=T, echo=T, dpi=600}
+rho <-  I5nb$summary.hy[4,c("0.025quant","mean","0.975quant")]
+plot(I5nb$marginals.hyper[[4]],xlab= expression(rho),ylab="Density", type="l")
+abline(v=rho, col=2,lty=c(2,1,2))
+```
+Plot the characteristics of the spatial (Matern) correlation.
+```{r, eval=T, echo=T}
+
+SpatField.w <- inla.spde2.result(inla = I5nb, name = "w", spde = spde, do.transfer = TRUE)
+
+Kappa <- inla.emarginal(function(x) x, 
+                        SpatField.w$marginals.kappa[[1]])
+
+Sigma_u <- inla.emarginal(function(x) sqrt(x), 
+                        SpatField.w$marginals.variance.nominal[[1]])
+
+range <- inla.emarginal(function(x) x, 
+                        SpatField.w$marginals.range.nominal[[1]])
+
+c(Kappa, Sigma_u, range)   
+```
+
+The range is the distance at which the spatial correlation is approxmately 0.1. Below we plot the correlation as a function of distance, with a horizontal line where the correlation is 0.1.
+
+```{r, eval=T, echo=T, dpi=600}
+# Show correlation structure
+LocMesh <- mesh1a$loc[,1:2]
+
+# And then we calculate the distance between each vertex.
+D <- as.matrix(dist(LocMesh))
+
+# Using the estimated parameters from the model (see above)
+# we can calculate the imposed Matern correlation values.
+d.vec <- seq(0, max(D), length = 100)      
+Cor.M <- (Kappa * d.vec) * besselK(Kappa * d.vec, 1) 
+Cor.M[1] <- 1
+
+# Which we plot here:
+par(mfrow=c(1,1))
+plot(x = d.vec, y = Cor.M, 
+     type = "l", 
+     xlab = "Distance (kilometers)", 
+     ylab = "Correlation", yaxs="i", ylim=c(-0.001,1))
+abline(h = 0.1, lty = 2)
+```
+
 Save the INLA results
 
 ```{r, eval=T, echo=T, dpi=600}
