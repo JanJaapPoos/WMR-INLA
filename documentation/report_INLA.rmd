@@ -482,7 +482,7 @@ grid.arrange(p1,p2, ncol=2)
 
 
 ## Including depth in the swept area estimation.
-Next we will test the effect of including the effect of depth on the counts as a random walk. Given the spatial patterns that were observed in the previous models, depth would be an ideal candidate to explain part of the spatial variation.
+Next we will test the effect of including the effect of depth on the counts as a random walk. Given the spatial patterns that were observed in the previous models, depth would be an ideal candidate to explain part of the spatial variation in counts.
 
 First, we need to add depth to the stack. 
 ```{r, eval=T, echo=T}
@@ -740,12 +740,12 @@ Note that in code below the names in the model matrix should not contain any spe
 
 The model formula needs to be updated so that lsurface doe snot end up in fixed effects. 
 ```{r, eval=T, echo=T}
-fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)[!names(X)=="lsurface"]," f(w, model = spde, group = w.group, control.group = list(model = 'ar1'))", ' f(Depth,model="rw2")'), collapse =" + ")))
+fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)[!names(X)=="lsurface"],"offset(lsurface)"," f(w, model = spde, group = w.group, control.group = list(model = 'ar1'))", ' f(Depth,model="rw2")'), collapse =" + ")))
 ```
 The new model is called I5nb.
 ```{r, eval=T, echo=T}
 INLA:::inla.dynload.workaround() 
-I5nb <- inla(eval(fsp), offset = lsurface, family = "nbinomial", data=inla.stack.data(Stack1),
+I5nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
            control.compute = list(dic = TRUE, waic = TRUE, config=TRUE, openmp.strategy="large"),
            control.predictor = list(A = inla.stack.A(Stack1)))
 
