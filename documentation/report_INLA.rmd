@@ -756,7 +756,7 @@ We compare the information criteria for all swept area models
 dic  <- c(I2p$dic$dic, I2nb$dic$dic, I3nb$dic$dic, I4nb$dic$dic, I5nb$dic$dic)
 waic <- c(I2p$waic$waic, I2nb$waic$waic, I3nb$waic$waic, I4nb$waic$waic,I5nb$waic$waic)
 Z     <- cbind(dic, waic)
-rownames(Z) <- c("Spatial Poisson model",  "Spatial NB model", "Spatial NB model depth", "Spatial-temporal NB model depth", "Spatial-temporal NB model depth with lsurface as offset",)
+rownames(Z) <- c("Spatial Poisson model",  "Spatial NB model", "Spatial NB model depth", "Spatial-temporal NB model depth", "Spatial-temporal NB model depth with lsurface as offset")
 Z
 ```
 
