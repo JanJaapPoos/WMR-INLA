@@ -557,7 +557,7 @@ p1 <- levelplot(zm ~ x * y,
             grid.points(x = cpue_subset$Xkm,
                         y = cpue_subset$Ykm, 
                         pch = 1,
-                        size = unit(cpue_subset$NoPerHaul/15, "char"))  
+                        size = unit(cpue_subset$NoPerHaul/70, "char"))  
           }) + xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
 
 p2 <- levelplot(zsd ~ x * y,
@@ -619,6 +619,7 @@ The model formula also needs to be updated.
 ```{r, eval=T, echo=T}
 fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde, group = w.group, control.group = list(model = 'ar1'))", ' f(Depth,model="rw2")'), collapse =" + ")))
 ```
+
 The new model is called I4nb.
 ```{r, eval=T, echo=T}
 INLA:::inla.dynload.workaround() 
@@ -628,6 +629,7 @@ I4nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
 
 summary(I4nb)
 ```
+
 We compare the information criteria for all swept area models
 ```{r, eval=T, echo=T}
 dic  <- c(I2p$dic$dic, I2nb$dic$dic, I3nb$dic$dic, I4nb$dic$dic)
@@ -638,7 +640,7 @@ Z
 ```
 
 Depth smoother can be plotted again, now for the Negative Binomial model with spatial-temporal correlation.
-```{r, eval=T, echo=T}
+```{r, eval=T, echo=T, dpi=600}
 #plot depth smoother
 Depthm <- I4nb$summary.random$Depth
 
@@ -652,9 +654,9 @@ lines(Depthm[, c(1, 4)], lty=2)
 lines(Depthm[, c(1, 6)], lty=2)
 rug(cpue_subset$Depth)
 ```
-Now we plot the spatial correlation. Because we now have a spatial-temporal model we need to plot one panel per year. The panels are quite small, so we chose not to plot the observations
+
+Now we plot the spatial correlation. Because we now have a spatial-temporal model we need to plot one panel per year. The panels are quite small, so we chose not to plot the observations.
 ```{r, eval=T, echo=T, fig.width=8, fig.height=8, dpi=600}
-# we want to make cells of 1 by 1 km. Let's do this first 
 years <- startyr:endyr
 
 w.pm <- I4nb$summary.random$w$mean
@@ -693,6 +695,7 @@ rho <-  I4nb$summary.hy[4,c("0.025quant","mean","0.975quant")]
 plot(I4nb$marginals.hyper[[4]],xlab= expression(rho),ylab="Density", type="l")
 abline(v=rho, col=2,lty=c(2,1,2))
 ```
+
 Plot the characteristics of the spatial (Matern) correlation.
 ```{r, eval=T, echo=T}
 
@@ -732,6 +735,7 @@ plot(x = d.vec, y = Cor.M,
      xlab = "Distance (kilometers)", 
      ylab = "Correlation", yaxs="i", ylim=c(-0.001,1))
 abline(h = 0.1, lty = 2)
+abline(v = range, lty = 2)
 ```
 
 ## Using offset for area  
@@ -760,7 +764,7 @@ rownames(Z) <- c("Spatial Poisson model",  "Spatial NB model", "Spatial NB model
 Z
 ```
 
-Depth smoother can be plotted again, now for the Negative Binomial model with spatial-temporal correlation.
+The depth smoother can be plotted again, now for the negative binomial model with spatial-temporal correlation, where the log transformed surface is an offset rather than a model parameter.
 ```{r, eval=T, echo=T}
 #plot depth smoother
 Depthm <- I5nb$summary.random$Depth
@@ -777,7 +781,6 @@ rug(cpue_subset$Depth)
 ```
 Now we plot the spatial correlation. Because we now have a spatial-temporal model we need to plot one panel per year. The panels are quite small, so we chose not to plot the observations
 ```{r, eval=T, echo=T, fig.width=8, fig.height=8, dpi=600}
-# we want to make cells of 1 by 1 km. Let's do this first 
 years <- startyr:endyr
 
 w.pm <- I5nb$summary.random$w$mean
@@ -855,9 +858,10 @@ plot(x = d.vec, y = Cor.M,
      xlab = "Distance (kilometers)", 
      ylab = "Correlation", yaxs="i", ylim=c(-0.001,1))
 abline(h = 0.1, lty = 2)
+abline(v = range, lty = 2)
 ```
 
-Save the INLA results
+Save the INLA results in an .Rdata image file.
 
 ```{r, eval=T, echo=T, dpi=600}
 save.image(file.path(path,"INLA_results.Rdata"))
@@ -890,7 +894,7 @@ fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde
 The new model is called I5nb.
 ```{r, eval=F, echo=T}
 INLA:::inla.dynload.workaround() 
-I5nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
+Ixxxnb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
            control.compute = list(dic = TRUE, waic = TRUE, config=TRUE, openmp.strategy="large"),
            control.predictor = list(A = inla.stack.A(Stack1)))
 
