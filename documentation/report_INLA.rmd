@@ -385,7 +385,7 @@ names(X) <- c(gsub("[:]",".",names(X)))
 head(X)
 
 N <- nrow(cpue_subset)
-Stack1 <- inla.stack(
+Stack2 <- inla.stack(
     tag  = "Fit",
     data = list(y = cpue_subset$NoPerHaul),    
     A    = list(1,1, A1),                      
@@ -407,13 +407,13 @@ Subsequently, two inla models are run, one assuming that the data are Poisson di
 fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde)"),collapse =" + ")))
 
 INLA:::inla.dynload.workaround() 
-I2p <- inla(eval(fsp), family = "poisson", data=inla.stack.data(Stack1),
+I2p <- inla(eval(fsp), family = "poisson", data=inla.stack.data(Stack2),
            control.compute = list(dic = TRUE, waic = TRUE),
-           control.predictor = list(A = inla.stack.A(Stack1)))
+           control.predictor = list(A = inla.stack.A(Stack2)))
 
-I2nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
+I2nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack2),
            control.compute = list(dic = TRUE, waic = TRUE, config=TRUE),
-           control.predictor = list(A = inla.stack.A(Stack1)))
+           control.predictor = list(A = inla.stack.A(Stack2)))
 ```
 Once the INLA models are run, the information criteria and summaries can be printed for the models. This summary contains much of the relevant information for the models, including the WAIC.
 
@@ -487,7 +487,7 @@ Next we will test the effect of including the effect of depth on the counts as a
 First, we need to add depth to the stack. 
 ```{r, eval=T, echo=T}
 N <- nrow(cpue_subset)
-Stack1 <- inla.stack(
+Stack3 <- inla.stack(
     tag  = "Fit",
     data = list(y = cpue_subset$NoPerHaul),    
     A    = list(1,1,1, A1),                      
@@ -507,9 +507,9 @@ fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde
 The new inla model is named I3nb (we only test a negative binomial error model).
 ```{r, eval=T, echo=T}
 INLA:::inla.dynload.workaround() 
-I3nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
+I3nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack3),
            control.compute = list(dic = TRUE, waic = TRUE, config=TRUE, openmp.strategy="large"),
-           control.predictor = list(A = inla.stack.A(Stack1)))
+           control.predictor = list(A = inla.stack.A(Stack3)))
 
 summary(I3nb)
 ```
@@ -576,20 +576,20 @@ grid.arrange(p1,p2, ncol=2)
 
 ## Including spatio temporal-correlation in the swept area estimation with depth 
 
-We need a new A1 object that contains not only the spatial correlation, but also the temporal correlation. This is done by creating a mesh for the time, where there is an observation for each year. This temporal mesh is used when creating the spde. 
+We need a new A object that contains not only the spatial correlation, but also the temporal correlation. This is done by creating a mesh for the time, where there is an observation for each year. This temporal mesh is named y.mesh and used when creating the spde. We call this object A4 (because it will be used with the 4th model). 
 ```{r, eval=TRUE, echo=TRUE}
 # 2. Define the weighting factors a_ik (also called the projector matrix).
 endyr <- max(cpue_subset$Year)
-t.mesh <- inla.mesh.1d(loc = startyr:endyr)
+y.mesh <- inla.mesh.1d(loc = startyr:endyr)
 
-A1 <- inla.spde.make.A(mesh = mesh1a, loc = Loc,
+A4 <- inla.spde.make.A(mesh = mesh1a, loc = Loc,
                       group = cpue_subset$Year,
-                     group.mesh = t.mesh)
+                     group.mesh = y.mesh)
 
-dim(A1)
+dim(A4)
 ```
 
-The first dimension of the projector matrix has the size of the number of observations (here `r dim(A1)[1]`), and the second dimension of the projector matrix is the number of nodes in the mesh (here `r dim(A1)[2]`).
+The first dimension of the projector matrix has the size of the number of observations (here `r dim(A4)[1]`), and the second dimension of the projector matrix is the number of nodes in the mesh (here `r dim(A4)[2]`).
 
 ```{r, eval=TRUE, echo=TRUE}
 # 3. Define the spde
@@ -604,10 +604,10 @@ w.st <- inla.spde.make.index('w',
 The stack needs to be updated to include the new A1 object that now includes spatio temporal correlation instead of only spatial correlation.
 ```{r, eval=T, echo=T}
 N <- nrow(cpue_subset)
-Stack1 <- inla.stack(
+Stack4 <- inla.stack(
     tag  = "Fit",
     data = list(y = cpue_subset$NoPerHaul),    
-    A    = list(1,1,1, A1),                      
+    A    = list(1,1,1, A4),                      
     effects = list( 
        Intercept=rep(1,N),
        X=X, #Covariates
@@ -623,9 +623,9 @@ fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde
 The new model is called I4nb.
 ```{r, eval=T, echo=T}
 INLA:::inla.dynload.workaround() 
-I4nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
+I4nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack4),
            control.compute = list(dic = TRUE, waic = TRUE, config=TRUE, openmp.strategy="large"),
-           control.predictor = list(A = inla.stack.A(Stack1)))
+           control.predictor = list(A = inla.stack.A(Stack4)))
 
 summary(I4nb)
 ```
@@ -745,19 +745,19 @@ We need a new A1 object that contains not only the spatial correlation, but also
 ```{r, eval=TRUE, echo=TRUE}
 # 2. Define the weighting factors a_ik (also called the projector matrix).
 endyr <- max(cpue_subset$Year)
-t.mesh <- inla.mesh.1d(loc = startyr:endyr)
 y.mesh <- inla.mesh.1d(loc = startyr:endyr)
 q.mesh <- inla.mesh.1d(loc = c(1,3))
 
-A1 <- inla.spde.make.A(mesh = mesh1a, loc = Loc,
+A5a <- inla.spde.make.A(mesh = mesh1a, loc = Loc,
                       group = cpue_subset$Year,
                      group.mesh = y.mesh)
 
-A2 <- inla.spde.make.A(mesh = mesh1a, loc = Loc,
+A5b <- inla.spde.make.A(mesh = mesh1a, loc = Loc,
                       group = cpue_subset$Quarter,
                      group.mesh = q.mesh)
 
-dim(A1)
+dim(A5a) #this should have the same dimensions as dim(A4)
+dim(A5b)
 ```
 
 The first dimension of the projector matrix has the size of the number of observations (here `r dim(A1)[1]`), and the second dimension of the projector matrix is the number of nodes in the mesh (here `r dim(A1)[2]`).
@@ -780,10 +780,10 @@ w.st.q <- inla.spde.make.index('w',
 The stack needs to be updated to include the new A1 object that now includes spatio temporal correlation instead of only spatial correlation.
 ```{r, eval=T, echo=T}
 N <- nrow(cpue_subset)
-Stack1 <- inla.stack(
+Stack5 <- inla.stack(
     tag  = "Fit",
     data = list(y = cpue_subset$NoPerHaul),    
-    A    = list(1,1,1, A1,A2),                      
+    A    = list(1,1,1, A5a,A5b),                      
     effects = list( 
        Intercept=rep(1,N),
        X=X, #Covariates
@@ -800,9 +800,9 @@ fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w.y, model = sp
 The new model is called I4nb.
 ```{r, eval=T, echo=T}
 INLA:::inla.dynload.workaround() 
-I5nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
+I5nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack5),
            control.compute = list(dic = TRUE, waic = TRUE, config=TRUE, openmp.strategy="large"),
-           control.predictor = list(A = inla.stack.A(Stack1)))
+           control.predictor = list(A = inla.stack.A(Stack5)))
 
 summary(I5nb)
 ```
@@ -842,7 +842,7 @@ wproj <- inla.mesh.projector(mesh1a, dims=c(xres,yres), xlim = xl, ylim = yl)
 grid <- expand.grid(year=years, x = wproj$x, y = wproj$y,zm=NA)
 
 for (i in unique(w.st$w.group)){
-    w.pm1km2 <- inla.mesh.project(wproj,w.pm[w.st$w.group==i])
+    w.pm1km2 <- inla.mesh.project(wproj,w.pm[w.st.y$w.group==i])
     grid[grid$year==years[i],]$zm <- as.vector(w.pm1km2)  
 }
 
@@ -918,8 +918,6 @@ abline(v = range, lty = 2)
 
 
 
-
-
 ## Using offset for area  
 
 Note that in code below the names in the model matrix should not contain any special characters! This is why we renamed the "NS-IBTS" survey to "NSIBTS" earlier.
@@ -931,9 +929,9 @@ fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)[!names(X)=="lsurfac
 The new model is called I5nb.
 ```{r, eval=T, echo=T}
 INLA:::inla.dynload.workaround() 
-I6nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
+I6nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack4),
            control.compute = list(dic = TRUE, waic = TRUE, config=TRUE, openmp.strategy="large"),
-           control.predictor = list(A = inla.stack.A(Stack1)))
+           control.predictor = list(A = inla.stack.A(Stack4)))
 
 summary(I6nb)
 ```
