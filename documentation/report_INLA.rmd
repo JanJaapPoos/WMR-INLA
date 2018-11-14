@@ -792,9 +792,9 @@ Stack5 <- inla.stack(
        w.q = w.st.q))                  #Spatial field
 ```
 
-The model formula also needs to be updated.
+The model formula also needs to be updated. Because there are only two seasons, the correlation is 'exchangeable'.
 ```{r, eval=T, echo=T}
-fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w.y, model = spde, group = w.group, control.group = list(model = 'ar1'))"," f(w.q, model = spde, group = w.group, control.group = list(model = 'seasonal'))",' f(Depth,model="rw2")'), collapse =" + ")))
+fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w.y, model = spde, group = w.group, control.group = list(model = 'ar1'))"," f(w.q, model = spde, group = w.group, control.group = list(model = 'exchangeable'))",' f(Depth,model="rw2")'), collapse =" + ")))
 ```
 
 The new model is called I4nb.
