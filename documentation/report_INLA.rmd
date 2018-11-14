@@ -766,10 +766,10 @@ The first dimension of the projector matrix has the size of the number of observ
 # 3. Define the spde
 spde  <- inla.spde2.matern(mesh1a)
 
-w.st.y <- inla.spde.make.index('w', 
+w.st.y <- inla.spde.make.index('w.y', 
                              n.spde = spde$n.spde,
                              n.group = length(startyr:endyr))
-w.st.q <- inla.spde.make.index('w', 
+w.st.q <- inla.spde.make.index('w.q', 
                              n.spde = spde$n.spde,
                              n.group = 2)
 
@@ -777,7 +777,7 @@ w.st.q <- inla.spde.make.index('w',
 
 
 
-The stack needs to be updated to include the new A1 object that now includes spatio temporal correlation instead of only spatial correlation.
+The stack needs to be updated to include the new A5a and A5b objects that now include spatio temporal (annual) correlation and the  seasonal correlation.
 ```{r, eval=T, echo=T}
 N <- nrow(cpue_subset)
 Stack5 <- inla.stack(
@@ -794,7 +794,7 @@ Stack5 <- inla.stack(
 
 The model formula also needs to be updated. Because there are only two seasons, the correlation is 'exchangeable'.
 ```{r, eval=T, echo=T}
-fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w.y, model = spde, group = w.group, control.group = list(model = 'ar1'))"," f(w.q, model = spde, group = w.group, control.group = list(model = 'exchangeable'))",' f(Depth,model="rw2")'), collapse =" + ")))
+fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w.y, model = spde, group = w.y.group, control.group = list(model = 'ar1'))"," f(w.q, model = spde, group = w.q.group, control.group = list(model = 'exchangeable'))",' f(Depth,model="rw2")'), collapse =" + ")))
 ```
 
 The new model is called I4nb.
@@ -836,13 +836,13 @@ Now we plot the spatial correlation. Because we now have a spatial-temporal mode
 ```{r, eval=T, echo=T, fig.width=8, fig.height=8, dpi=600}
 years <- startyr:endyr
 
-w.pm <- I5nb$summary.random$w$mean
+w.pm <- I5nb$summary.random$w.y$mean
 wproj <- inla.mesh.projector(mesh1a, dims=c(xres,yres), xlim = xl, ylim = yl) 
 
 grid <- expand.grid(year=years, x = wproj$x, y = wproj$y,zm=NA)
 
-for (i in unique(w.st$w.group)){
-    w.pm1km2 <- inla.mesh.project(wproj,w.pm[w.st.y$w.group==i])
+for (i in unique(w.st.y$w.y.group)){
+    w.pm1km2 <- inla.mesh.project(wproj,w.pm[w.st.y$w.y.group==i])
     grid[grid$year==years[i],]$zm <- as.vector(w.pm1km2)  
 }
 
@@ -866,26 +866,61 @@ p1 <- levelplot(zm ~ x * y|as.factor(year)  ,
 plot(p1)
 ```
 
-Next we plot the posterior of the estimated temporal correlation. The drawn red vertical line indicates the mean of the distribution. The dashed line indicate the 0.025 and 0.975 quantiles.
+Next we plot the posterior of the estimated temporal (yearly) correlation. The drawn red vertical line indicates the mean of the distribution. The dashed line indicate the 0.025 and 0.975 quantiles.
 ```{r, eval=T, echo=T, dpi=600}
 rho <-  I5nb$summary.hy[4,c("0.025quant","mean","0.975quant")]
 plot(I5nb$marginals.hyper[[4]],xlab= expression(rho),ylab="Density", type="l")
 abline(v=rho, col=2,lty=c(2,1,2))
 ```
 
+
+Now we plot the seasonal spatial correlation. Because we now have a spatial-temporal model we need to plot one panel per year. The panels are quite small, so we chose not to plot the observations.
+```{r, eval=T, echo=T, fig.width=8, fig.height=8, dpi=600}
+quarters <- c(1,3)
+
+w.pm <- I5nb$summary.random$w.q$mean
+
+grid <- expand.grid(quarter=quarters, x = wproj$x, y = wproj$y,zm=NA)
+
+for (i in unique(w.st.q$w.q.group)){
+    w.pm1km2 <- inla.mesh.project(wproj,w.pm[w.st.q$w.q.group==i])
+    grid[grid$quarter==quarters[i],]$zm <- as.vector(w.pm1km2)  
+}
+
+p2 <- levelplot(zm ~ x * y|as.factor(quarter)  ,
+          data = grid, 
+          scales = list(draw = TRUE),
+          xlab = list("Easting", cex = 1),
+          ylab = list("Northing", cex = 1),
+          main = list("Posterior mean spatial random fields", cex = 1),
+          col.regions=tim.colors(25, alpha = 1),
+           strip = strip.custom(style = 1),
+          panel=function(x, y, z, subscripts,...){
+            panel.levelplot(x, y, z, subscripts,...)
+            grid.points(x = cpue_subset[cpue_subset$Quarter == grid[subscripts[1],]$quarter,]$Xkm,
+                        y = cpue_subset[cpue_subset$Quarter == grid[subscripts[1],]$quarter,]$Ykm, 
+                        pch = 1,
+                        size = unit(0.0005*cpue_subset[cpue_subset$Quarter == grid[subscripts[1],]$quarter,]$NoPerHaul/
+                                    cpue_subset[cpue_subset$Quarter ==grid[subscripts[1],]$quarter,]$surface, "char"))  
+          }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
+
+plot(p2)
+```
+
+
 Plot the characteristics of the spatial (Matern) correlation.
 ```{r, eval=T, echo=T}
 
-SpatField.w <- inla.spde2.result(inla = I5nb, name = "w", spde = spde, do.transfer = TRUE)
+SpatField.w.y <- inla.spde2.result(inla = I5nb, name = "w.y", spde = spde, do.transfer = TRUE)
 
 Kappa <- inla.emarginal(function(x) x, 
-                        SpatField.w$marginals.kappa[[1]])
+                        SpatField.w.y$marginals.kappa[[1]])
 
 Sigma_u <- inla.emarginal(function(x) sqrt(x), 
-                        SpatField.w$marginals.variance.nominal[[1]])
+                        SpatField.w.y$marginals.variance.nominal[[1]])
 
 range <- inla.emarginal(function(x) x, 
-                        SpatField.w$marginals.range.nominal[[1]])
+                        SpatField.w.y$marginals.range.nominal[[1]])
 
 c(Kappa, Sigma_u, range)   
 ```
@@ -916,8 +951,6 @@ abline(v = range, lty = 2)
 ```
 
 
-
-
 ## Using offset for area  
 
 Note that in code below the names in the model matrix should not contain any special characters! This is why we renamed the "NS-IBTS" survey to "NSIBTS" earlier.
@@ -926,7 +959,8 @@ The model formula needs to be updated so that lsurface doe snot end up in fixed 
 ```{r, eval=T, echo=T}
 fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)[!names(X)=="lsurface"],"offset(lsurface)"," f(w, model = spde, group = w.group, control.group = list(model = 'ar1'))", ' f(Depth,model="rw2")'), collapse =" + ")))
 ```
-The new model is called I5nb.
+
+The new model is called I6nb. Note that this model used Stack 4, and thus does not include a seasonal effect.
 ```{r, eval=T, echo=T}
 INLA:::inla.dynload.workaround() 
 I6nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack4),
@@ -1002,7 +1036,7 @@ abline(v=rho, col=2,lty=c(2,1,2))
 Plot the characteristics of the spatial (Matern) correlation.
 ```{r, eval=T, echo=T}
 
-SpatField.w <- inla.spde2.result(inla = I5nb, name = "w", spde = spde, do.transfer = TRUE)
+SpatField.w <- inla.spde2.result(inla = I6nb, name = "w", spde = spde, do.transfer = TRUE)
 
 Kappa <- inla.emarginal(function(x) x, 
                         SpatField.w$marginals.kappa[[1]])
@@ -1047,6 +1081,26 @@ Save the INLA results in an .Rdata image file.
 save.image(file.path(path,"INLA_results.Rdata"))
 ```
 
+
+## Using offset for area with seasonally changing spatial corr 
+Note that in code below the names in the model matrix should not contain any special characters! This is why we renamed the "NS-IBTS" survey to "NSIBTS" earlier.
+
+```{r, eval=T, echo=T}
+fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)[!names(X)=="lsurface"],"offset(lsurface)",
+                        " f(w.y, model = spde, group = w.y.group, control.group = list(model = 'ar1'))",
+                        " f(w.q, model = spde, group = w.q.group, control.group = list(model = 'exchangeable'))",
+                        ' f(Depth,model="rw2")'), collapse =" + ")))
+```
+
+The new model is called I4nb.
+```{r, eval=T, echo=T}
+INLA:::inla.dynload.workaround() 
+I7nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack5),
+           control.compute = list(dic = TRUE, waic = TRUE, config=TRUE, openmp.strategy="large"),
+           control.predictor = list(A = inla.stack.A(Stack5)))
+
+summary(I5nb)
+```
 
 ## Encore2: test if relative survey catchabilities are changing? 
 
