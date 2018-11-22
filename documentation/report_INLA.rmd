@@ -120,8 +120,8 @@ NS.border$loc <- NS.border$loc/1000
 Now that we have the tow possible boundaries to use for the mesh, we can generate a mesh with each the boundaries. The generation of the mesh is done using inla.mesh.2d(). That function takes several arguments, including "cutoff" and "max.edge". These arguments specify how fine the final mesh will be. The max.edge argument specifies the largest allowable edge length for the for the triangles in the mesh. The corners of the triangles are called vertices. Finer meshes will be able to capture smaller scale spatial correlations, but require more computing time in the inla model.
 
 ```{r, eval=T, echo=TRUE}
-mesh1a <- inla.mesh.2d(boundary=ConvHull, max.edge=c(40))
-mesh1b <- inla.mesh.2d(boundary=NS.border, max.edge=c(40), cutoff=3)
+mesh1a <- inla.mesh.2d(boundary=ConvHull, max.edge=c(80))
+mesh1b <- inla.mesh.2d(boundary=NS.border, max.edge=c(80), cutoff=3)
 ```
 
 The number of vertices is stored in mesh1a$n and mesh1b$n. In our example, the number of verices for mesh1a is `r mesh1a$n`. A mesh with ~ 1000 vertices seems like a good trade-off between computation time and precision of our estimates.
@@ -774,7 +774,6 @@ w.st.q <- inla.spde.make.index('w.q',
                              n.group = 2)
 
 ```
-
 
 
 The stack needs to be updated to include the new A5a and A5b objects that now include spatio temporal (annual) correlation and the  seasonal correlation.
