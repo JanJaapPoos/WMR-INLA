@@ -117,7 +117,9 @@ NS.border <- inla.sp2segment(NorthSeaUTM)
 NS.border$loc <- NS.border$loc/1000
 ```
 
-Now that we have the tow possible boundaries to use for the mesh, we can generate a mesh with each the boundaries. The generation of the mesh is done using inla.mesh.2d(). That function takes several arguments, including "cutoff" and "max.edge". These arguments specify how fine the final mesh will be. The max.edge argument specifies the largest allowable edge length for the for the triangles in the mesh. The corners of the triangles are called vertices. Finer meshes will be able to capture smaller scale spatial correlations, but require more computing time in the inla model.
+Now that we have the two possible boundaries to use for the mesh, we can generate a mesh with each the boundaries. The generation of the mesh is done using inla.mesh.2d(). That function takes several arguments, including "cutoff" and "max.edge". These arguments specify how fine the final mesh will be. The max.edge argument specifies the largest allowable edge length for the for the triangles in the mesh. The corners of the triangles are called vertices. Finer meshes will be able to capture smaller scale spatial correlations, but require more computing time in the inla model.
+
+The mesh can be extended outside the boundary by setting two values for the "max.edge" argument (see also ?inla.mesh.2d). Bakka et al. (2016). gives background on the creation of meshes, and if the mesh should be extended outside the boundary of the observations: "Solutions of SPDEs (that are used in INLA) on bounded domains are constructed imposing boundary conditions. In particular for 2D problems the R-INLA implementation uses Neumann boundaries. This class of conditions increase the variance near the boundaries. Then, if we are modelling a stationary field is important to extend the domain in order to make this effect neglegible. On the other hand, if there is physical boundary this effect may be desiderable." In our case, the boundary of the observations corresponds roughly with the coastlines, and we thus chose not to extend the mesh outside of the observations. In other applications, where the boundary of the observations does not correspond to a "natural boundary" extending the mesh is probably advisable. 
 
 ```{r, eval=T, echo=TRUE}
 mesh1a <- inla.mesh.2d(boundary=ConvHull, max.edge=c(80))
@@ -137,20 +139,30 @@ par(mfrow=c(1,2))
 plot(mesh1a)
 lines(UTMmapFinal, lwd=2)
 points(Loc, col = 2, pch = 16, cex = 0.3)
+box()
+
 plot(mesh1b)
 lines(UTMmapFinal, lwd=2)
 points(Loc, col = 2, pch = 16, cex = 0.3)
+box()
 ```
 
-## Making the projector matrix and the spde 
+## Making the projector matrix 
 
-Once the 2d mesh is made we construct a observation/prediction weight matrix for the model. This is also called the "projector matrix".
+The SPDE model is defined on a mesh with _m_ dimensions, whereas the response is defined at _n_ locations. We need a way to link the _m_ mesh vertices to the _n_ responses. This is achieved via a projector matrix (A). This projector matrix is built using inla.spde.make.A(). 
+
+The value of any point is created by projecting this point onto a plane formed by the triangle it is positioned in. The exact value of the point is the weighted average of three weights associated with each vertex. Fr more information and a worked out example see also http://www.flutterbys.com.au/stats/tut/tut12.13.html#h2_7. 
+
 ```{r, eval=T, echo=TRUE}
 # 2. Define the weighting factors a_ik (also called the projector matrix).
 A1 <- inla.spde.make.A(mesh = mesh1a, loc=Loc)
 dim(A1)
 ```
-The first dimension of the projector matrix has the size of the number of observations (here `r dim(A1)[1]`), and the second dimension of the projector matrix is the number of nodes in the mesh (here `r dim(A1)[2]`).
+The first dimension of the projector matrix has the size of the number of observations _n_ (here `r dim(A1)[1]`), and the second dimension of the projector matrix is the number of nodes in the mesh _m_ (here `r dim(A1)[2]`).
+
+## Making the SPDE 
+INLA uses stochastic partial differential equations (SPDE). A full tutorial on SPDEs can be found at http://inla.r-inla-download.org/r-inla.org/tutorials/spde/spde-tutorial.pdf. Making the SPDE for a 2 dimensional mesh with matern correlation is done using inla.spde2.matern(). This takes the mesh as argument. After the SPDE object is created, we also need to make a list of named index vectors for an SPDE model. This is done inla.spde.make.index().
+
 ```{r, eval=T, echo=TRUE}
 # 3. Define the spde
 spde <- inla.spde2.matern(mesh1a)
@@ -159,7 +171,7 @@ w.st <- inla.spde.make.index('w', n.spde = spde$n.spde)
 
 ## Making the stack
 
-The stack allows INLA to build models with complex linear predictors. Here have a SPDE model combined with covariate fixed effects and an intercept at n hauls.
+The stack allows INLA to build models with complex linear predictors. Here have a SPDE model combined with covariate fixed effects and an intercept at _n_ hauls.
 
 Before making the stack we need to convert all fixed effects that are factors in the INLA model.
 ```{r, eval=T, echo=T}
@@ -1134,5 +1146,7 @@ Ixxxnb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
 summary(I5nb)
 ```
 
+## References
 
+Bakka, H., J. Vanhatalo, J. Illian, D. Simpson, and H. Rue. 2016. "Accounting for Physical Barriers in Species Distribution Modeling with Non-Stationary Spatial Random Effects." ArXiv preprint arXiv:1608.03787. Norwegian University of Science; Technology, Trondheim, Norway.
 
