@@ -1098,7 +1098,7 @@ I7nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack5),
            control.compute = list(dic = TRUE, waic = TRUE, config=TRUE, openmp.strategy="large"),
            control.predictor = list(A = inla.stack.A(Stack5)))
 
-summary(I5nb)
+summary(I7nb)
 ```
 
 ## Encore2: test if relative survey catchabilities are changing? 
