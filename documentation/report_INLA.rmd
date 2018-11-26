@@ -339,8 +339,8 @@ grid$zsd <- as.vector(wsd.pm100100)
 p1 <- levelplot(zm ~ x * y,
           data = grid, 
           scales = list(draw = TRUE),
-          xlab = list("Easting", cex = 1),
-          ylab = list("Northing", cex = 1),
+          xlab = list("Easting (km)", cex = 1),
+          ylab = list("Northing (km)", cex = 1),
           main = list("Posterior mean spatial random fields", cex = 1),
           col.regions=tim.colors(25, alpha = 1),
           panel=function(x, y, z, subscripts,...){
@@ -354,8 +354,8 @@ p1 <- levelplot(zm ~ x * y,
 p2 <- levelplot(zsd ~ x * y,
           data = grid, 
           scales = list(draw = TRUE),
-          xlab = list("Easting", cex = 1),
-          ylab = list("Northing", cex = 1),
+          xlab = list("Easting (km)", cex = 1),
+          ylab = list("Northing (km)", cex = 1),
           main = list("Posterior sd spatial random fields", cex = 1),
           col.regions=tim.colors(25, alpha = 1),
           panel=function(x, y, z, subscripts,...){
@@ -368,10 +368,10 @@ grid.arrange(p1,p2, ncol=2)
 ```
 
 ## Using swept area estimates
-Rather than using time as a measure of effort, we will use surface. That will allow us to make predictions on the number of individuals caught per unit area. Because of the log link, the surfaces are log transformed (and named "lsurface"). Remember that the units of surface were km2. 
+Rather than using time as a measure of effort, we can use the surface of the trawls (swept area) as a response variable. That will allow us to make predictions on the number of individuals caught per unit area. Because of the log link in the model, the surfaces are log transformed (and named "lsurface"). Remember that the units of surface were km2. The parameter for the linear predictor is expected to be 1: in that case a doubling of the surface results in a doubling of the counts.  
 
 ### Making the stack
-Note that in code below the names in the model matrix should not contain any special characters! This is why we renamed the "NS-IBTS" survey to "NSIBTS" earlier.
+Note that in the code below names in the model matrix should not contain any special characters! This is why we renamed the "NS-IBTS" survey to "NSIBTS" earlier.
 ```{r, eval=T, echo=T}
 # 5. Make a stack. In this process we tell INLA at which points on the mesh we sampled the response variable and the covariates. 
 Xmatrix <- model.matrix(~ fYear + fSurvey +  lsurface,  data = cpue_subset)
@@ -429,7 +429,7 @@ Z
 summary(I2nb)
 ```
 
-The information for the fixed effects is similar to what was presented for the previous models. However, now the haul duration is replaced by the swept area of the trawls. The swept area is log transformed. We model density as an exponential function of the linear predictor which is linear function of explanatory variable, density = counts/area = $\exp(\eta)$. Hence y=$\exp(\eta)* \exp(\log(area))= $\exp(\eta + \log(area))$. The appealing aspect of this formulation is that the raw data and corresponding probability distribution are retained.
+The information for the fixed effects is similar to what was presented for the previous models. However, now the haul duration is replaced by the swept area of the trawls. The swept area is log transformed. We model density as an exponential function of the linear predictor which is linear function of explanatory variable, density = counts/area = $\exp(\eta)$. Hence y=$\exp(\eta)$ * $\exp(\log(area))$ = $\exp(\eta + \log(area))$. The appealing aspect of this formulation is that the raw data and corresponding probability distribution are retained.
 
 In our case, the estimated parameter for log (area) is close to 1. This is also our expectation: We  
 
@@ -453,8 +453,8 @@ grid$zsd <- as.vector(wsd.pm1km2)
 p1 <- levelplot(zm ~ x * y,
           data = grid, 
           scales = list(draw = TRUE),
-          xlab = list("Easting", cex = 1),
-          ylab = list("Northing", cex = 1),
+          xlab = list("Easting (km)", cex = 1),
+          ylab = list("Northing (km)", cex = 1),
           main = list("Posterior mean spatial random fields", cex = 1),
           col.regions=tim.colors(25, alpha = 1),
           panel=function(x, y, z, subscripts,...){
@@ -468,8 +468,8 @@ p1 <- levelplot(zm ~ x * y,
 p2 <- levelplot(zsd ~ x * y,
           data = grid, 
           scales = list(draw = TRUE),
-          xlab = list("Easting", cex = 1),
-          ylab = list("Northing", cex = 1),
+          xlab = list("Easting (km)", cex = 1),
+          ylab = list("Northing (km)", cex = 1),
           main = list("Posterior sd spatial random fields", cex = 1),
           col.regions=tim.colors(25, alpha = 1),
           panel=function(x, y, z, subscripts,...){
@@ -498,7 +498,7 @@ Stack3 <- inla.stack(
        w = w.st))                  #Spatial field
 ```
 
-Next, we extend the model formula. Apart from the elements that we had earlier (the fixed effects and the spatial correlation), we now include the term for the random walk of depth. 
+Next, we extend the model formula. Apart from the elements that we had earlier (the fixed effects and the spatial correlation), we now include the term for the random walk of depth. This term includes a "model" argument, where the type of correlation model is specified. In our case we use a random walk of order 2. Information about this correlation model can be found by under inla.doc("rw2").
 ```{r, eval=T, echo=T}
 #6.	Specify the model formula
 fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde)", ' f(Depth,model="rw2")'),collapse =" + ")))
@@ -548,8 +548,8 @@ grid$zsd <- as.vector(wsd.pm100100)
 p1 <- levelplot(zm ~ x * y,
           data = grid, 
           scales = list(draw = TRUE),
-          xlab = list("Easting", cex = 1),
-          ylab = list("Northing", cex = 1),
+          xlab = list("Easting (km)", cex = 1),
+          ylab = list("Northing (km)", cex = 1),
           main = list("Posterior mean spatial random fields", cex = 1),
           col.regions=tim.colors(25, alpha = 1),
           panel=function(x, y, z, subscripts,...){
@@ -563,8 +563,8 @@ p1 <- levelplot(zm ~ x * y,
 p2 <- levelplot(zsd ~ x * y,
           data = grid, 
           scales = list(draw = TRUE),
-          xlab = list("Easting", cex = 1),
-          ylab = list("Northing", cex = 1),
+          xlab = list("Easting (km)", cex = 1),
+          ylab = list("Northing (km)", cex = 1),
           main = list("Posterior sd spatial random fields", cex = 1),
           col.regions=tim.colors(25, alpha = 1),
           panel=function(x, y, z, subscripts,...){
@@ -672,8 +672,8 @@ for (i in unique(w.st$w.group)){
 p1 <- levelplot(zm ~ x * y|as.factor(year)  ,
           data = grid, 
           scales = list(draw = TRUE),
-          xlab = list("Easting", cex = 1),
-          ylab = list("Northing", cex = 1),
+          xlab = list("Easting (km)", cex = 1),
+          ylab = list("Northing (km)", cex = 1),
           main = list("Posterior mean spatial random fields", cex = 1),
           col.regions=tim.colors(25, alpha = 1),
            strip = strip.custom(style = 1),
@@ -848,8 +848,8 @@ for (i in unique(w.st.y$w.y.group)){
 p1 <- levelplot(zm ~ x * y|as.factor(year)  ,
           data = grid, 
           scales = list(draw = TRUE),
-          xlab = list("Easting", cex = 1),
-          ylab = list("Northing", cex = 1),
+          xlab = list("Easting (km)", cex = 1),
+          ylab = list("Northing (km)", cex = 1),
           main = list("Posterior mean spatial random fields", cex = 1),
           col.regions=tim.colors(25, alpha = 1),
            strip = strip.custom(style = 1),
@@ -889,8 +889,8 @@ for (i in unique(w.st.q$w.q.group)){
 p2 <- levelplot(zm ~ x * y|as.factor(quarter)  ,
           data = grid, 
           scales = list(draw = TRUE),
-          xlab = list("Easting", cex = 1),
-          ylab = list("Northing", cex = 1),
+          xlab = list("Easting (km)", cex = 1),
+          ylab = list("Northing (km)", cex = 1),
           main = list("Posterior mean spatial random fields", cex = 1),
           col.regions=tim.colors(25, alpha = 1),
            strip = strip.custom(style = 1),
@@ -1009,8 +1009,8 @@ for (i in unique(w.st$w.group)){
 p1 <- levelplot(zm ~ x * y|as.factor(year)  ,
           data = grid, 
           scales = list(draw = TRUE),
-          xlab = list("Easting", cex = 1),
-          ylab = list("Northing", cex = 1),
+          xlab = list("Easting (km)", cex = 1),
+          ylab = list("Northing (km)", cex = 1),
           main = list("Posterior mean spatial random fields", cex = 1),
           col.regions=tim.colors(25, alpha = 1),
            strip = strip.custom(style = 1),
