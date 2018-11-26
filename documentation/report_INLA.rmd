@@ -43,7 +43,7 @@ head(full_cpue)
 
 We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will subset the data, and start our analysis from a fiven year. That year is stored in startyr.    
 ```{r, eval=TRUE, echo=TRUE}
-startyr <- 1980
+startyr <- 2014
 cpue_subset <- full_cpue[full_cpue$Year >= startyr,]
 ```
 
@@ -264,7 +264,7 @@ In this case the model "hyperparameters" provide information about the overdispe
 
 The two theta parameters describe the spatial field w. Theta2 is equal to  $\log(\kappa)$. Theta1 is equal to $\log(\tau)$ = - $\log(4 \pi \kappa^2 \sigma_{u}^2)/2$. Kappa is a parameter in the Matern correlation function, that defines the rate of decline in the correlation. Large $\kappa$ values indicate a fast decline in correlation. The Matern correlation function contains two parameters: $\kappa$ and $\nu$. While $\kappa$ is being estimates, $\nu$ is assumed to be equal to 1 by default in INLA. 
 
-Plot the histograms of observations and fits for all models. 
+Below we plot the histograms of observations and fits for all models. In the four panels, the bars represent a histogram of the observations and the red dots represent a histogram of the predicted values for each datapoint.   
 
 ```{r, eval=T, echo=T, dpi=600}
 idx <- inla.stack.index(Stack1, tag= 'Fit')$data
@@ -275,16 +275,16 @@ names.arg <- as.numeric(names(table(cpue_subset$NoPerHaul)))
 breaks <- c(as.numeric(names(table(cpue_subset$NoPerHaul))),1000)
 ltable <- log(table(cpue_subset$NoPerHaul))
 
-pos <- barplot(ltable, names.arg = names.arg, ylim = yl, main = "Poisson model")
+pos <- barplot(ltable, names.arg = names.arg, ylim = yl, main = "Poisson model", ylab="log(frequency)")
 points(y=log(table(cut(I1p$summary.fitted.values[idx,"mean"], breaks=breaks))), x = pos[,1], col=2, pch=19)
 
-pos <- barplot(ltable, names.arg = names.arg, ylim = yl, main = "Negative binomial model")
+pos <- barplot(ltable, names.arg = names.arg, ylim = yl, main = "Negative binomial model", ylab="log(frequency)")
 points(y=log(table(cut(I1nb$summary.fitted.values[idx,"mean"], breaks=breaks))), x = pos[,1], col=2, pch=19)
 
-pos <- barplot(ltable, names.arg = names.arg, ylim = yl, main = "ZIP model")
+pos <- barplot(ltable, names.arg = names.arg, ylim = yl, main = "ZIP model", ylab="log(frequency)")
 points(y=log(table(cut(I1zip$summary.fitted.values[idx,"mean"], breaks=breaks))), x = pos[,1], col=2, pch=19)
 
-pos <- barplot(ltable, names.arg = names.arg, ylim = yl, main = "ZINB model")
+pos <- barplot(ltable, names.arg = names.arg, ylim = yl, main = "ZINB model", ylab="log(frequency)")
 points(y=log(table(cut(I1zinb$summary.fitted.values[idx,"mean"], breaks=breaks))), x = pos[,1], col=2, pch=19)
 ```
 
@@ -312,7 +312,7 @@ range <- inla.emarginal(function(x) x,
 c(Kappa, Sigma_u, range)
 ```
 
-The posterior mean of $\kappa$ is `r Kappa` and the posterior mean $\sigma_{u}$ is `r Sigma_u`. The range is the distance at which the spatial correlation is approxmately 0.1. In this case, this range is approximately `r round(range)' km. Below we plot the correlation as a function of distance, with a dashed vertical line at the range and a dashed horizontal line where the correlation is exactly 0.1.
+The posterior mean of $\kappa$ is `r Kappa` and the posterior mean $\sigma_{u}$ is `r Sigma_u`. The range is the distance at which the spatial correlation is approxmately 0.1. The range is calculated as sqrt(8)/kappa. In this case, this range is approximately `r round(range)` km. Below we plot the correlation as a function of distance, with a dashed vertical line at the range and a dashed horizontal line where the correlation is exactly 0.1.
 
 ```{r, eval=T, echo=T,  dpi=600}
 # Show correlation structure
@@ -337,8 +337,9 @@ abline(h = 0.1, lty = 2)
 abline(v = range, lty = 2)
 ```
 
+We plot the spatial random field (mean and standard deviation) 
 
-```{r, eval=T, echo=F, fig.width=8, fig.height=4, dpi=600}
+```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
 wproj <- inla.mesh.projector(mesh1a, xlim = range(Loc[,1]), ylim = range(Loc[,2])) 
 
 wm.pm100100  <- inla.mesh.project(wproj, I1nb$summary.random$w$mean)
@@ -588,7 +589,7 @@ grid.arrange(p1,p2, ncol=2)
 
 ## Including spatio temporal-correlation in the swept area estimation with depth 
 
-We need a new A object that contains not only the spatial correlation, but also the temporal correlation. This is done by creating a mesh for the time, where there is an observation for each year. This temporal mesh is named y.mesh and used when creating the spde. We call this object A4 (because it will be used with the 4th model). 
+We need a new projector matrix (A object) that contains not only the spatial correlation, but also the temporal correlation. This is done by first creating a mesh for the time, where there is an observation for each year. This temporal mesh is named y.mesh and used when creating the spde. We call this object A4 (because it will be used with the 4th model). 
 ```{r, eval=TRUE, echo=TRUE}
 # 2. Define the weighting factors a_ik (also called the projector matrix).
 endyr <- max(cpue_subset$Year)
@@ -613,7 +614,7 @@ w.st <- inla.spde.make.index('w',
 ```
 
 
-The stack needs to be updated to include the new A1 object that now includes spatio temporal correlation instead of only spatial correlation.
+The stack needs to be updated to include the new A4 object that now includes spatio temporal correlation instead of only spatial correlation.
 ```{r, eval=T, echo=T}
 N <- nrow(cpue_subset)
 Stack4 <- inla.stack(
@@ -651,7 +652,7 @@ rownames(Z) <- c("Spatial Poisson model",  "Spatial NB model", "Spatial NB model
 Z
 ```
 
-Depth smoother can be plotted again, now for the Negative Binomial model with spatial-temporal correlation.
+The depth smoother can be plotted again, now for the Negative Binomial model with spatial-temporal correlation.
 ```{r, eval=T, echo=T, dpi=600}
 #plot depth smoother
 Depthm <- I4nb$summary.random$Depth
@@ -701,14 +702,15 @@ p1 <- levelplot(zm ~ x * y|as.factor(year)  ,
 plot(p1)
 ```
 
-Next we plot the posterior of the estimated temporal correlation. The drawn red vertical line indicates the mean of the distribution. The dashed line indicate the 0.025 and 0.975 quantiles.
+Next we plot the posterior of the estimated temporal correlation. The drawn red vertical line indicates the mean of the distribution. The dashed line indicate the 0.025 and 0.975 quantiles. 
 ```{r, eval=T, echo=T, dpi=600}
 rho <-  I4nb$summary.hy[4,c("0.025quant","mean","0.975quant")]
 plot(I4nb$marginals.hyper[[4]],xlab= expression(rho),ylab="Density", type="l")
 abline(v=rho, col=2,lty=c(2,1,2))
 ```
+The posterior mean of the temporal correlation parameter is `rho[2]`.
 
-Plot the characteristics of the spatial (Matern) correlation.
+Below, we plot the characteristics of the spatial (Matern) correlation.
 ```{r, eval=T, echo=T}
 
 SpatField.w <- inla.spde2.result(inla = I4nb, name = "w", spde = spde, do.transfer = TRUE)
@@ -753,7 +755,7 @@ abline(v = range, lty = 2)
 
 ## Including spatio temporal-correlation in the swept area estimation with depth and having spatial patterns by season
 
-We need a new A1 object that contains not only the spatial correlation, but also the temporal correlation. This is done by creating a mesh for the time, where there is an observation for each year. This temporal mesh is used when creating the spde. 
+We need a new A object that contains not only the spatial correlation, but also the temporal correlation. This is done by creating a mesh for the time, where there is an observation for each year. This temporal mesh is used when creating the spde. 
 ```{r, eval=TRUE, echo=TRUE}
 # 2. Define the weighting factors a_ik (also called the projector matrix).
 endyr <- max(cpue_subset$Year)
