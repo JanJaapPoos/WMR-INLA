@@ -9,11 +9,11 @@ rm(list=ls())
 ```
 The survey data are so called geostatistical data where we have an observation (in many cases counts of a species in a sample) with a spatial index, such as longitude and latitude. 
 
-Often, these survey data also have a number of other observations, e.g. about the depth at the sampling location, or the substrate at the location of the sample. these can be used as covariates to study their effects on the counts in the sample.
+Often, these survey data also have a number of other observations, e.g. about the depth at the sampling location, or the substrate at the location of the sample. These can be used as covariates to study their effects on the counts in the sample.
 
 INLA stands for "Integrated Nested Laplace Approximations". INLA is a tool for Bayesian inference in regression models. The models may consist of various components, such as a spatial component, random effects and both linear and smooth effects of some covariates (Rue et al. 2009). In INLA, the geostatistical data can thus be analysed, examining the effect of the covariates, and the spatial, temporal, or spatial-temporal correlation in the observations.
 
-Before we get started we need to set the correct path for accessing the data, load the relevant libraries, and read the data. In this case, the data is stored in a .Rdata file in a previous step.
+Before we get started we need to set the correct path to access the data, load the relevant libraries, and read the data. In this case, the data is stored in an .Rdata file from a previous step (report_survey_prep).
 
 The INLA package can be installed using install.packages("INLA", repos="https://inla.r-inla-download.org/R/stable"). We need the inla package, but also a number of packages for spatial analyses ('rgeos' and 'rgdal')  and for plotting the data and the results ('lattice', 'latticeExtra', 'grid', 'gridExtra', 'mapdata', and 'maptools').
 
@@ -29,7 +29,6 @@ library(mapdata); library(maptools)
 
 load(file.path(path,"survey_data.Rdata"))
 ```
-R rotates the values on the y-axes when using the plot command by default. In order to plot the values on the y-axes horizontally we set the graphical parameter named "las" to one by `par(las=1)`.   
 
 ### The data 
 
@@ -38,10 +37,9 @@ head(full_cpue)
 ```
 
 
-
 ### Subsetting and length aggregation
 
-We still have a lot of data (`r nrow(full_cpue)`), Because these are just here as example, we will subset the data, and start our analysis from a fiven year. That year is stored in startyr.    
+We still have a lot of data (`r nrow(full_cpue)`). Because these are just here as example, we will subset the data, and start our analysis from a fiven year. That year is stored in startyr.    
 ```{r, eval=TRUE, echo=TRUE}
 startyr <- 2014
 cpue_subset <- full_cpue[full_cpue$Year >= startyr,]
@@ -73,7 +71,7 @@ plot(cpue_subset$ShootLong,cpue_subset$ShootLat,
      xlab="Longitude", ylab="Lattitude", main="Counts per hauls")
 map("world",add=T)
 ```
-Clearly the IBTS hauls cover a larger part of the North Sea, but the large catches are located in the same areas. 
+Clearly the IBTS hauls cover a larger part of the North Sea, but the large catches are located in the same areas in both surveys. 
 
 ### The count data
 
@@ -90,6 +88,9 @@ hist(cpue_subset[cpue_subset$Survey == "NSIBTS" &cpue_subset$Quarter == 3,]$NoPe
 
 The count data is clearly quite skewed, with lots of zeros and small values, and very few large counts. Because of this distribution and because these are counts, a Poisson and a negative binomial distribution will be used in the INLA model. We will also test if zero-inflation provides better fits to the data.
 
+Fitting an INLA model is not much different from fitting a glm or glmer. However, options available to take account of spatial-temporal correlation are a nice bonus and we will make use of that, simply because we expect / know that correlation in space and time is present and we want to take that into account. 
+In other statistical packages, you can account for spatial correlation as well, but often only when your data is regularly spaced. In INLA, you don't have to worry about that, because we'll make some sort of an odd (but satisfactory) looking grid that INLA can use in a very efficient way. We call this a mesh.
+
 ## Making a spatial mesh for the data
 
 When making a mesh the study area is divided into a large number of non-overlapping triangles (Zuur et al. 2017). This mesh is used to estimated the spatial correlation in the data.
@@ -105,7 +106,7 @@ Before creating the mesh we need a boundary for it: we do not want our spatial c
 ConvHull <- inla.nonconvex.hull(points=Loc, convex=-0.02, resolution=90)
 ```
 
-As an alternative to using the nonconvex hull function to generate a boundary, we can also take the shapefile of the North Seaas the boundary of the mesh, which makes prediction in the future easier, as we know no record can be found outside the North Sea area (give or take evolution). We first load the ICES shapefiles which were downloaded from http://gis.ices.dk/sf/. We load this shapefiles, merge layers together, transform to UTM, convert UTM to km rather than meters and finally create a mesh. 
+As an alternative to using the nonconvex hull function to generate a boundary, we can also take the shapefile of the North Seas as the boundary of the mesh, which makes prediction in the future easier, as we know no record can be found outside the North Sea area (give or take evolution). We first load the ICES shapefiles which were downloaded from http://gis.ices.dk/sf/. We load this shapefiles, merge layers together, transform to UTM, convert UTM to km rather than meters and finally create a mesh. 
 ```{r, eval=T, echo=TRUE}
 ICESareas <- readShapePoly(file.path(path,"ICES_Areas_20160601_dense"))
 NorthSea  <- subset(ICESareas,SubArea==4)
@@ -117,16 +118,16 @@ NS.border <- inla.sp2segment(NorthSeaUTM)
 NS.border$loc <- NS.border$loc/1000
 ```
 
-Now that we have the two possible boundaries to use for the mesh, we can generate a mesh with each the boundaries. The generation of the mesh is done using inla.mesh.2d(). That function takes several arguments, including "cutoff" and "max.edge". These arguments specify how fine the final mesh will be. The max.edge argument specifies the largest allowable edge length for the for the triangles in the mesh. The corners of the triangles are called vertices. Finer meshes will be able to capture smaller scale spatial correlations, but require more computing time in the inla model.
+Now that we have the two possible boundaries to use for the mesh, we can generate a mesh with each of the boundaries. The generation of the mesh is done using inla.mesh.2d(). That function takes several arguments, including "cutoff" and "max.edge". These arguments specify how fine the final mesh will be. The max.edge argument specifies the largest allowable edge length for the triangles in the mesh. The corners of the triangles are called vertices. Finer meshes will be able to capture smaller scale spatial correlations, but require more computing time in the inla model.
 
-The mesh can be extended outside the boundary by setting two values for the "max.edge" argument (see also ?inla.mesh.2d). Bakka et al. (2016). gives background on the creation of meshes, and if the mesh should be extended outside the boundary of the observations: "Solutions of SPDEs (that are used in INLA) on bounded domains are constructed imposing boundary conditions. In particular for 2D problems the R-INLA implementation uses Neumann boundaries. This class of conditions increase the variance near the boundaries. Then, if we are modelling a stationary field is important to extend the domain in order to make this effect neglegible. On the other hand, if there is physical boundary this effect may be desiderable." In our case, the boundary of the observations corresponds roughly with the coastlines, and we thus chose not to extend the mesh outside of the observations. In other applications, where the boundary of the observations does not correspond to a "natural boundary" extending the mesh is probably advisable. 
+The mesh can be extended outside the boundary by setting two values for the "max.edge" argument (see also ?inla.mesh.2d). Bakka et al. (2016). gives background on the creation of meshes, and if the mesh should be extended outside the boundary of the observations: "Solutions of SPDEs (that are used in INLA) on bounded domains are constructed imposing boundary conditions. In particular for 2D problems the R-INLA implementation uses Neumann boundaries. This class of conditions increase the variance near the boundaries. Then, if we are modelling a stationary field it is important to extend the domain in order to make this effect neglegible. On the other hand, if there is a physical boundary this effect may be desiderable." In our case, the boundary of the observations corresponds roughly with the coastlines, and we thus chose not to extend the mesh outside of the observations. In other applications, where the boundary of the observations does not correspond to a "natural boundary" extending the mesh is probably advisable. 
 
 ```{r, eval=T, echo=TRUE}
-mesh1a <- inla.mesh.2d(boundary=ConvHull, max.edge=c(80))
-mesh1b <- inla.mesh.2d(boundary=NS.border, max.edge=c(80), cutoff=3)
+mesh1a <- inla.mesh.2d(boundary=ConvHull, max.edge=c(40))
+mesh1b <- inla.mesh.2d(boundary=NS.border, max.edge=c(40), cutoff=3)
 ```
 
-The number of vertices is stored in mesh1a$n and mesh1b$n. In our example, the number of verices for mesh1a is `r mesh1a$n`. A mesh with ~ 1000 vertices seems like a good trade-off between computation time and precision of our estimates.
+The number of vertices is stored in mesh1a$n and mesh1b$n. In our example, the number of verices for mesh1a is `r mesh1a$n`. A mesh with ~ 1000 vertices seems like a good trade-off between computation time and precision of our estimates. Note that when we use the NS.border as a boundary, we need a very high amount of extra meshes to cover the odd shape of the coastline. Only if you are interested in these fine-scale patterns close to shore, it becomes worth it to take this approach. The number of vertices is ~5x higher, which may result in a much longer computation time.
 
 The meshes can be plotted using the plot() function on the mesh object. Once the mesh is plotted, the locations of the samples (stored in the Loc object) can be overlayed using points(). Below, the two meshes are plotted side-by-side, together with a map in UTM coordinates.
 
@@ -147,31 +148,33 @@ points(Loc, col = 2, pch = 16, cex = 0.3)
 box()
 ```
 
-## Making the projector matrix 
+It is good practice to start with a mesh that allows you to do your model selection without having to wait for days. In the end, you can create a finer-scale mesh and run your 'final' model once more with this smaller mesh. Or, try different meshes and find the sweet-spot just to make sure that the mesh doesn't affect your model fit (fixed and random effects) to a great extend.
+
+## Making the projector matrix
+
+Now it gets a bit technical. To be able to estimate the correlation in an efficient way, we will solve using a Stochastic Partial Differential Equation (SPDE). INLA will do this for you! To do so, we need to project our data point locations onto the mesh.
 
 The SPDE model is defined on a mesh with _m_ dimensions, whereas the response is defined at _n_ locations. We need a way to link the _m_ mesh vertices to the _n_ responses. This is achieved via a projector matrix (A). This projector matrix is built using inla.spde.make.A(). 
 
-The value of any point is created by projecting this point onto a plane formed by the triangle it is positioned in. The exact value of the point is the weighted average of three weights associated with each vertex. Fr more information and a worked out example see also http://www.flutterbys.com.au/stats/tut/tut12.13.html#h2_7. 
+The value of any point is created by projecting this point onto a plane formed by the triangle it is positioned in. The exact value of the point is the weighted average of three weights associated with each vertex. For more information and a worked out example see also http://www.flutterbys.com.au/stats/tut/tut12.13.html#h2_7. 
 
 ```{r, eval=T, echo=TRUE}
-# 2. Define the weighting factors a_ik (also called the projector matrix).
 A1 <- inla.spde.make.A(mesh = mesh1a, loc=Loc)
 dim(A1)
 ```
 The first dimension of the projector matrix has the size of the number of observations _n_ (here `r dim(A1)[1]`), and the second dimension of the projector matrix is the number of nodes in the mesh _m_ (here `r dim(A1)[2]`).
 
 ## Making the SPDE 
-INLA uses stochastic partial differential equations (SPDE). A full tutorial on SPDEs can be found at http://inla.r-inla-download.org/r-inla.org/tutorials/spde/spde-tutorial.pdf. Making the SPDE for a 2 dimensional mesh with matern correlation is done using inla.spde2.matern(). This takes the mesh as argument. After the SPDE object is created, we also need to make a list of named index vectors for an SPDE model. This is done inla.spde.make.index().
+A full tutorial on SPDEs can be found at http://inla.r-inla-download.org/r-inla.org/tutorials/spde/spde-tutorial.pdf. Making the SPDE for a 2 dimensional mesh with matern correlation is done using inla.spde2.matern(). This takes the mesh as argument. After the SPDE object is created, we also need to make a list of named index vectors for an SPDE model. This is done inla.spde.make.index().
 
 ```{r, eval=T, echo=TRUE}
-# 3. Define the spde
 spde <- inla.spde2.matern(mesh1a)
 w.st <- inla.spde.make.index('w', n.spde = spde$n.spde)
 ```
 
 ## Making the stack
 
-The stack allows INLA to build models with complex linear predictors. Here have a SPDE model combined with covariate fixed effects and an intercept at _n_ hauls.
+Finally, we need to combine all information into one big pile of data-bits. In INLA, we call that a 'stack'. The stack allows INLA to build models with complex linear predictors. Here we have an SPDE model combined with covariate fixed effects and an intercept at _n_ hauls.
 
 Before making the stack we need to convert all fixed effects that are factors in the INLA model.
 ```{r, eval=T, echo=T}
@@ -185,9 +188,8 @@ cpue_subset$lsurface <- log(cpue_subset$surface)
 cpue_subset$lhauldur <- log(cpue_subset$HaulDur)
 ```
 
-Note that in code below the names in the model matrix should not contain any special characters! This is why we renamed the "NS-IBTS" survey to "NSIBTS"
+Note that in the code below the names in the model matrix should not contain any special characters! This is why we renamed the "NS-IBTS" survey to "NSIBTS"
 ```{r, eval=T, echo=T}
-# 5. Make a stack. In this process we tell INLA about the and the covariates and at which points on the mesh we sampled the response variable . 
 Xmatrix <- model.matrix(~ fYear + fSurvey + lhauldur, data=cpue_subset)
 head(Xmatrix)
 ```
@@ -210,11 +212,15 @@ Stack1 <- inla.stack(
        w=w.st))                  #Spatial field
 ```
 
+What this stack is combining is the response variable (y), the intercept and covariates (and the model will estimate parameters for each of these) and the spatial-correlation structure to take account of (w).
+
 ## Making the model formula and running the INLA model
 
-The model formula used in the inla model is generated from the names of the model matrix, combined with the intercept term and the spatial correlation model ("f(w, model=spde)").
+The model formula used in the inla model is generated from the names of the model matrix, combined with the intercept term and the spatial correlation model ("f(w, model=spde)"). (Note that the f() function is a generic INLA function where you can specify all sorts of models, e.g. auto-correlation, random walks etc).
 
 Subsequently, two inla models are run, one assuming that the data are Poisson distributed, and another model assuming that the data are negative binomial distributed.
+
+We thus evaluate the model: count ~ year + survey + hauldurationn + spatialCorrelation.
 
 ```{r, eval=T, results='hide', echo=T, message=FALSE, warning=FALSE}
 fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde)"),collapse =" + ")))
@@ -236,7 +242,8 @@ I1zinb <- inla(eval(fsp), family = "zeroinflatednbinomial1", data=inla.stack.dat
            control.compute = list(dic = TRUE, waic = TRUE, config=TRUE),
            control.predictor = list(A = inla.stack.A(Stack1)))
 ```
-Once the INLA models are run, a summary can be printed for the models. This summary contains much of the relevant information for the models. The summary also contains the DIC and WAIC information criterions. DIC and WAIC work just like AIC in that the model with the lowest WAIC should be selected.
+Once the INLA models are run, a summary can be printed for the models. This summary contains much of the relevant information for the models. The summary also contains the DIC and WAIC information criterions. DIC and WAIC work just like AIC in that the model with the lowest WAIC should be selected. 
+There is one tricky thing though here, and that is that small differences in WAIC may be caused by some of the stochastic processes that go on during model fitting. The rule of thumb on AIC difference >2 then select the model with the lowest AIC may not always work well here. 
 
 ```{r, eval=T, echo=T}
 summary(I1p)$waic$waic
@@ -252,19 +259,36 @@ rownames(Z) <- c("Poisson model", "Negative binomial model", "Zero Inflated Pois
 Z
 ```
 
-The negative binomial model has the lowest DIC and WAIC. Let's see the summary of this model.  
+The negative binomial model has the lowest DIC and WAIC. Let's see the summary of this model. The difference with the Zero-inflated negative binomial is however small. Let's compare estimated parameters too.  
 ```{r, eval=T, echo=T}
 summary(I1nb)
+summary(I1zinb)
+
+par(mfrow=c(1,1),oma=c(6,4,2,2))
+plot(y=I1nb$summary.fixed[,4],x=1:nrow(I1nb$summary.fixed),pch=19,xlab="",ylab="Parameter value",col=1,ylim=range(I1nb$summary.fixed[,3:5]),xaxt="n")
+axis(1,at=1:nrow(I1nb$summary.fixed),labels=rownames(I1nb$summary.fixed),las=2)
+     
+segments(x0=1:nrow(I1nb$summary.fixed),x1=1:nrow(I1nb$summary.fixed),y0=I1nb$summary.fixed[,3],y1=I1nb$summary.fixed[,5])
+
+points(y=I1zinb$summary.fixed[,4],x=(1:nrow(I1zinb$summary.fixed))+0.1,pch=19,col=2)
+segments(x0=(1:nrow(I1zinb$summary.fixed))+0.1,x1=(1:nrow(I1zinb$summary.fixed))+0.1,y0=I1zinb$summary.fixed[,3],y1=I1zinb$summary.fixed[,5],col=2)
+
+legend("bottomright",legend=c("I1nb","I1zinb"),pch=19,col=1:2)
+
 ```
 The summary displays the call to INLA, some information about the time needed to process the model, information about the fixed effects, random effects, model hyperparameters, and several information criteria. The fixed effects include the intercept and all parameter valuse for the factor variable years. The number of parameter estimates for years is equal the the total number of years in the model minus 1. Likewise, there are two surveys in the data, and the number of parameter estimates in the model is two minus one: only the parameter estimate for the difference between the IBTS and BTS is given. The parameter estimate named "lhauldur" gives the linear predictor for the effect of log haul duration.
 
+The difference in estimated fixed effects is very small.
+
 The model output indicates that there are random effects for the SPDE2 model.
 
-In this case the model "hyperparameters" provide information about the overdispersion parameter in the negative binomial distribution. Remember that the variance in a negative binomial distribution is equal to $\mu + \mu^{2} / k$. The "size" hyperparameter provides the estimate of $k$. In our case, the estimate of "size" is `r I1nb$summary.hyperpar$mean[1]` and the data is overdispersed (1/overdispersion < 1). 
+In this case the model "hyperparameters" provide information about the overdispersion parameter in the negative binomial distribution. Remember that the variance in a negative binomial distribution is equal to $\mu + \mu^{2} / k$. The "size" hyperparameter provides the estimate of $k$. In our case, the estimate of "size" is `r I1nb$summary.hyperpar$mean[1]` and the data is overdispersed if (1/overdispersion < 1). 
 
 The two theta parameters describe the spatial field w. Theta2 is equal to  $\log(\kappa)$. Theta1 is equal to $\log(\tau)$ = - $\log(4 \pi \kappa^2 \sigma_{u}^2)/2$. Kappa is a parameter in the Matern correlation function, that defines the rate of decline in the correlation. Large $\kappa$ values indicate a fast decline in correlation. The Matern correlation function contains two parameters: $\kappa$ and $\nu$. While $\kappa$ is being estimates, $\nu$ is assumed to be equal to 1 by default in INLA. 
 
 Below we plot the histograms of observations and fits for all models. In the four panels, the bars represent a histogram of the observations and the red dots represent a histogram of the predicted values for each datapoint.   
+
+As said before, the data stored in an INLA model is huge and to get the right bits out, we use a trick to only get the fitted values that correspond to the supplied covariates out. 
 
 ```{r, eval=T, echo=T, dpi=600}
 idx <- inla.stack.index(Stack1, tag= 'Fit')$data
@@ -288,10 +312,127 @@ pos <- barplot(ltable, names.arg = names.arg, ylim = yl, main = "ZINB model", yl
 points(y=log(table(cut(I1zinb$summary.fitted.values[idx,"mean"], breaks=breaks))), x = pos[,1], col=2, pch=19)
 ```
 
+We want to take a look at some other diagnostics too. For that, we need residuals. 
+For each of these models, the calculation of residuals is somewhat different. We show all 4 scenarios.
+
+```{r, eval=T, echo=T} 
+M1 <- I1p
+M2 <- I1nb
+M3 <- I1zip
+M4 <- I1zinb
+
+#- Residuals
+M1_mu <- M1$summary.fitted.values[idx, "mean"]  #poisson model
+M1_VarY <- M1_ExpY <- M1_mu
+M1_E <- (cpue_subset$NoPerHaul - M1_ExpY) / sqrt(M1_VarY)
+
+M2_mu <- M2$summary.fitted.values[idx, "mean"] #negative binomial model
+M2_ExpY <- M2_mu 
+M2_theta <- M2$summary.hyperpar[1,"mean"]
+M2_E <- (cpue_subset$NoPerHaul - M2_ExpY) / sqrt(M2_ExpY + M2_ExpY^2/ M2_theta)
+
+M3_mu <- M3$summary.fitted.values[idx,"mean"]
+M3_Pi <- M3$summary.hyperpar[1,"mean"] #zero-inflated poisson
+M3_ExpY <- (1-M3_Pi)* M3_mu
+M3_VarY <- (1-M3_Pi)*(M3_mu + M3_Pi * M3_mu^2)
+M3_E <- (cpue_subset$NoPerHaul - M3_ExpY) / sqrt(M3_VarY)
+
+M4_mu <- M4$summary.fitted.values[idx,"mean"] #zero-inflated negative binomial
+M4_Pi <- M4$summary.hyperpar[2,"mean"] 
+M4_theta <- M4$summary.hyperpar[1,"mean"]
+M4_ExpY <- (1-M4_Pi) * M4_mu
+M4_VarY <- (1-M4_Pi) * (M4_mu + M4_Pi * M4_mu^2)
+M4_E <- (cpue_subset$NoPerHaul - M4_ExpY) / sqrt(M4_ExpY + M4_ExpY^2/ M4_theta)
+
+```
+
+Let's check for overdispersion:
+colSums(cbind(M1_E,M2_E,M3_E,M4_E)^2)/(nrow(cpue_subset) - c(7,7,8,8)) #looking for ~1
+
+Let's plot observed vs predicted
+```{r, eval=T, echo=T,  dpi=600} 
+par(mfrow=c(2,2))
+yrange      <- c(-5,20)
+plot(y=M1_ExpY,x=cpue_subset$NoPerHaul,pch=".",ylim=c(0,10),xlim=c(0,30),xlab="Observed",ylab="Predicted",main="Poisson")
+abline(a=0,b=1,col=2,lty=2)
+
+plot(y=M2_ExpY,x=cpue_subset$NoPerHaul,pch=".",ylim=c(0,10),xlim=c(0,30),xlab="Observed",ylab="Predicted",main="Negative Binomial")
+abline(a=0,b=1,col=2,lty=2)
+
+plot(y=M3_ExpY,x=cpue_subset$NoPerHaul,pch=".",ylim=c(0,10),xlim=c(0,30),xlab="Observed",ylab="Predicted",main="Zero-inflated Poisson")
+abline(a=0,b=1,col=2,lty=2)
+
+plot(y=M4_ExpY,x=cpue_subset$NoPerHaul,pch=".",ylim=c(0,10),xlim=c(0,30),xlab="Observed",ylab="Predicted",main="Zero-inflated Negative Binomial")
+abline(a=0,b=1,col=2,lty=2)
+
+```
+The differences are small...
+
+With the count data, the counts vary between `r range(cpue_subset$NoPerHaul)` while in the fitted models, predicted values go from Poisson `r range(M1_ExpY)`, NegBin `r range(M2_ExpY)`, ZIP `r range(M3_ExpY)` and ZINB `r range(M4_ExpY)`. That is quite a bit lower! These high counts are always difficult to predict using mean values, and therefore we test if given the estimated parameters, we can predict those high numbers too. For this, we make a prediction given the estimated parameters and see how many times we predict a certain amount of NoPerHaul compared to the observed ones. We put this onto an x-y plot to see if we under-over estimate lower-higher frequency counts. The point in the top-right represents zero-counts and the next one 1-counts etc. 
+
+```{r, eval=T, echo=T,  dpi=600} 
+library(ZIM)
+par(mfrow=c(4,2))
+for(fam in c("poisson","nbinomial","zeroinflatedpoisson1","zeroinflatednbinomial1")){
+  if(fam=="poisson"){
+    comb      <- merge(as.data.frame(table(rpois(length(M1_ExpY),M1_ExpY))),as.data.frame(table(cpue_subset$NoPerHaul)),by="Var1",all=T)
+    for(i in 2:3) comb[which(is.na(comb[,i])),i] <- 0; colnames(comb) <- c("Count","Predicted","Observed")
+    summary(lm(comb$Observed ~ comb$Predicted))
+  }
+  if(fam=="zeroinflatedpoisson1"){
+    comb      <- merge(as.data.frame(table(rzip(length(M3_ExpY),M3_ExpY,M3_Pi))),as.data.frame(table(cpue_subset$NoPerHaul)),by="Var1",all=T)
+    for(i in 2:3) comb[which(is.na(comb[,i])),i] <- 0; colnames(comb) <- c("Count","Predicted","Observed")
+    summary(lm(comb$Observed ~ comb$Predicted))
+    summary(lm(log(comb$Observed+0.01) ~ log(comb$Predicted+0.01)))
+  }
+  if(fam=="nbinomial"){
+    comb      <- merge(as.data.frame(table(rnbinom(length(M2_ExpY),mu=M2_mu,size=M2_theta))),as.data.frame(table(cpue_subset$NoPerHaul)),by="Var1",all=T)
+    for(i in 2:3) comb[which(is.na(comb[,i])),i] <- 0; colnames(comb) <- c("Count","Predicted","Observed")
+    summary(lm(comb$Observed ~ comb$Predicted))
+    summary(lm(log(comb$Observed+0.01) ~ log(comb$Predicted+0.01)))
+  }
+  if(fam=="zeroinflatednbinomial1"){
+    comb      <- merge(as.data.frame(table(rzinb(length(M4_ExpY),k=M4_theta,lambda=M4_mu,omega=M4_Pi))),as.data.frame(table(cpue_subset$NoPerHaul)),by="Var1",all=T)
+    for(i in 2:3) comb[which(is.na(comb[,i])),i] <- 0; colnames(comb) <- c("Count","Predicted","Observed")
+    summary(lm(comb$Observed ~ comb$Predicted))
+  }
+  plot(comb$Observed ~ comb$Predicted,xlab="Predicted",ylab="Observed",main=fam)
+  abline(a=0,b=1,col=2,lty=2)
+  plot(log(comb$Observed) ~ log(comb$Predicted),xlab="log(Predicted)",ylab="log(Observed)")
+  abline(a=0,b=1,col=2,lty=2)
+}
+```
+
+Usually we would also look at residuals versus co-variates but we have hardly any of those that would make sense plotting. A generic plot looks like this. 
+
+```{r, eval=T, echo=T,  dpi=600} 
+plot(x = M1_ExpY,
+     y = M1_E,
+     xlab = "Fitted values",
+     ylab = "Pearson residuals",xlim=c(0,10),ylim=yrange,main="Poisson")
+```
+
+Since we are looking at spatial data, it may be good to investigate residuals in space too:
+
+```{r, eval=T, echo=T,  dpi=600} 
+range01 <- function(x){(x-min(x,na.rm=T))/(max(x,na.rm=T)-min(x,na.rm=T))}
+cpue_subset$E   <- range01(abs(M1_E)) * 5
+cpue_subset$col <- ifelse(M1_E<0,1,2)
+xyplot(ShootLat ~ ShootLong | fYear * fSurvey, data=cpue_subset,type="p",pch=1,cex=cpue_subset$E,col=cpue_subset$col,xlab="Longitude",ylab="Latitude",
+  panel=function(x,y,cex,col,...){
+    #dat <- list(...)
+    panel.xyplot(x,y,col="white")
+    idx <- sample(x,length(x))
+    panel.points(x,y,col=col,cex=cex,pch=19)
+    })
+
+```
+The residuals don't look very good, only a few large positive residuals vs many small negative ones. But what to do?!
+
+
 We mentioned the two theta hyperparamaters earlier, and how they contain the information about the spatial correlation in the model. These hyperparameters and some derived hyperparameters from the spde can be extracted from the model using inla.spde2.result()
 
 ```{r, eval=T, echo=T}
-# extract spde2 results 
 SpatField.w <- inla.spde2.result(inla = I1nb, name = "w", spde = spde, do.transfer = TRUE)
 ```
 
@@ -299,7 +440,6 @@ This object contains the hyperparameters and the information about e.g. $\kappa$
 The parameter $\kappa$ defines the rate of decline in correlation, and the parameters $\sigma_{u}^2$ indicates the variance. Below, we use the inla.emarginal function of inla to compute the expected values for the hyperparameters.   
 
 ```{r, eval=T, echo=T}
-# Spatial info
 Kappa <- inla.emarginal(function(x) x, 
                         SpatField.w$marginals.kappa[[1]] )
 
@@ -355,7 +495,8 @@ p1 <- levelplot(zm ~ x * y,
           xlab = list("Easting (km)", cex = 1),
           ylab = list("Northing (km)", cex = 1),
           main = list("Posterior mean spatial random fields", cex = 1),
-          col.regions=tim.colors(25, alpha = 1),
+          col.regions=tim.colors(24, alpha = 1),
+          at=seq(-6.5,5,0.5),
           panel=function(x, y, z, subscripts,...){
             panel.levelplot(x, y, z, subscripts,...)
             grid.points(x = cpue_subset$Xkm,
@@ -370,7 +511,8 @@ p2 <- levelplot(zsd ~ x * y,
           xlab = list("Easting (km)", cex = 1),
           ylab = list("Northing (km)", cex = 1),
           main = list("Posterior sd spatial random fields", cex = 1),
-          col.regions=tim.colors(25, alpha = 1),
+          col.regions=tim.colors(31, alpha = 1),
+          at=seq(0,3,0.1),
           panel=function(x, y, z, subscripts,...){
             panel.levelplot(x, y, z, subscripts,...)
             
@@ -381,12 +523,11 @@ grid.arrange(p1,p2, ncol=2)
 ```
 
 ## Using swept area estimates
-Rather than using time as a measure of effort, we can use the surface of the trawls (swept area) as a response variable. That will allow us to make predictions on the number of individuals caught per unit area. Because of the log link in the model, the surfaces are log transformed (and named "lsurface"). Remember that the units of surface were km2. The parameter for the linear predictor is expected to be 1: in that case a doubling of the surface results in a doubling of the counts.  
+Rather than using time as a measure of effort, we can use the surface of the trawls (swept area) as a response variable. That will allow us to make predictions on the number of individuals caught per unit area (because we know the surface area of the North Sea). Because of the log link in the model, the surfaces are log transformed (and named "lsurface"). Remember that the units of surface were km2. The parameter for the linear predictor is expected to be 1: in that case a doubling of the surface results in a doubling of the counts.  
 
 ### Making the stack
 Note that in the code below names in the model matrix should not contain any special characters! This is why we renamed the "NS-IBTS" survey to "NSIBTS" earlier.
 ```{r, eval=T, echo=T}
-# 5. Make a stack. In this process we tell INLA at which points on the mesh we sampled the response variable and the covariates. 
 Xmatrix <- model.matrix(~ fYear + fSurvey +  lsurface,  data = cpue_subset)
 ```
 
@@ -442,13 +583,12 @@ Z
 summary(I2nb)
 ```
 
-The information for the fixed effects is similar to what was presented for the previous models. However, now the haul duration is replaced by the swept area of the trawls. The swept area is log transformed. We model density as an exponential function of the linear predictor which is linear function of explanatory variable, density = counts/area = $\exp(\eta)$. Hence y=$\exp(\eta)$ * $\exp(\log(area))$ = $\exp(\eta + \log(area))$. The appealing aspect of this formulation is that the raw data and corresponding probability distribution are retained.
+The information for the fixed effects is similar to what was presented for the previous models. However, now the haul duration is replaced by the swept area of the trawls. The swept area is log transformed. We model density as an exponential function of the linear predictor which is a linear function of explanatory variables, density = counts/area = $\exp(\eta)$. Hence y=$\exp(\eta)$ * $\exp(\log(area))$ = $\exp(\eta + \log(area))$. The appealing aspect of this formulation is that the raw data and corresponding probability distribution are retained.
 
-In our case, the estimated parameter for log (area) is close to 1. This is also our expectation: We  
+In our case, the estimated parameter for log (area) is close to 1. This is also our expectation.  
 
 We will plot the spatial mean and sd, but this time with a grid size of 1 by 1 km. Because the sampling locations are on a km grid, we can first find the ranges of the x and y coordinates of the grid, and then have grid cells of size 1.
 ```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
-# we want to make cells of 1 by 1 km. Let's do this first 
 xl <- round(range(Loc[,1]))
 yl <- round(range(Loc[,2]))
 xres <- xl[2]-xl[1] + 1
@@ -469,7 +609,8 @@ p1 <- levelplot(zm ~ x * y,
           xlab = list("Easting (km)", cex = 1),
           ylab = list("Northing (km)", cex = 1),
           main = list("Posterior mean spatial random fields", cex = 1),
-          col.regions=tim.colors(25, alpha = 1),
+          col.regions=tim.colors(24, alpha = 1),
+          at=seq(-6.5,5,0.5),
           panel=function(x, y, z, subscripts,...){
             panel.levelplot(x, y, z, subscripts,...)
             grid.points(x = cpue_subset$Xkm,
@@ -484,7 +625,8 @@ p2 <- levelplot(zsd ~ x * y,
           xlab = list("Easting (km)", cex = 1),
           ylab = list("Northing (km)", cex = 1),
           main = list("Posterior sd spatial random fields", cex = 1),
-          col.regions=tim.colors(25, alpha = 1),
+          col.regions=tim.colors(31, alpha = 1),
+          at=seq(0,3,0.1),
           panel=function(x, y, z, subscripts,...){
             panel.levelplot(x, y, z, subscripts,...)
            
@@ -495,7 +637,7 @@ grid.arrange(p1,p2, ncol=2)
 
 
 ## Including depth in the swept area estimation.
-Next we will test the effect of including the effect of depth on the counts as a random walk. Given the spatial patterns that were observed in the previous models, depth would be an ideal candidate to explain part of the spatial variation in counts.
+Next we will test the effect of including the effect of depth on the counts as a random walk. Given the spatial patterns that were observed in the previous models, depth would be an ideal candidate to explain part of the spatial correlation in counts.
 
 First, we need to add depth to the stack. 
 ```{r, eval=T, echo=T}
@@ -513,7 +655,6 @@ Stack3 <- inla.stack(
 
 Next, we extend the model formula. Apart from the elements that we had earlier (the fixed effects and the spatial correlation), we now include the term for the random walk of depth. This term includes a "model" argument, where the type of correlation model is specified. In our case we use a random walk of order 2. Information about this correlation model can be found by under inla.doc("rw2").
 ```{r, eval=T, echo=T}
-#6.	Specify the model formula
 fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde)", ' f(Depth,model="rw2")'),collapse =" + ")))
 ```
 
@@ -528,10 +669,8 @@ summary(I3nb)
 ```
 This model has one more hyperparameter compared to the previous models: the precision for depth, which comes from the rw2 model for depth.
 
-
 The information about the random walk model for the effect of depth on the counts is located in the summary of the random effects. It is stored in a data frame, and we copy it into a new object named Depthm 
 ```{r, eval=T, echo=T}
-#plot depth smoother
 Depthm <- I3nb$summary.random$Depth
 ```
 
@@ -548,7 +687,7 @@ lines(Depthm[, c(1, 6)], lty=2)
 rug(cpue_subset$Depth)
 ```
 
-Did the spatial correlation change now that we included depth?
+Did the spatial correlation change now that we included depth (we'd like that, we want the spatial correlation to be as low as possible and being explained by the covariates)?
 ```{r, eval=T, echo=T, fig.width=8, fig.height=4, dpi=600}
 # we want to make cells of 1 by 1 km. Let's do this first 
 wm.pm100100  <- inla.mesh.project(wproj, I3nb$summary.random$w$mean)
@@ -558,13 +697,16 @@ grid     <- expand.grid(x = wproj$x, y = wproj$y)
 grid$zm  <- as.vector(wm.pm100100)   
 grid$zsd <- as.vector(wsd.pm100100)   
 
+p1Old <- p1; p2Old <- p2
+
 p1 <- levelplot(zm ~ x * y,
           data = grid, 
           scales = list(draw = TRUE),
           xlab = list("Easting (km)", cex = 1),
           ylab = list("Northing (km)", cex = 1),
           main = list("Posterior mean spatial random fields", cex = 1),
-          col.regions=tim.colors(25, alpha = 1),
+          col.regions=tim.colors(24, alpha = 1),
+          at=seq(-6.5,5,0.5),
           panel=function(x, y, z, subscripts,...){
             panel.levelplot(x, y, z, subscripts,...)
             grid.points(x = cpue_subset$Xkm,
@@ -579,19 +721,22 @@ p2 <- levelplot(zsd ~ x * y,
           xlab = list("Easting (km)", cex = 1),
           ylab = list("Northing (km)", cex = 1),
           main = list("Posterior sd spatial random fields", cex = 1),
-          col.regions=tim.colors(25, alpha = 1),
+          col.regions=tim.colors(31, alpha = 1),
+          at=seq(0,3,0.1),
           panel=function(x, y, z, subscripts,...){
             panel.levelplot(x, y, z, subscripts,...)
           }) + xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
 
-grid.arrange(p1,p2, ncol=2)
+grid.arrange(p1,p2,p1Old,p2Old, ncol=2,nrow=2)
 ```
+Note that the bottom-row is the model without depth and the top-row is the model including depth. Most certainly there is an improvement.
 
 ## Including spatio temporal-correlation in the swept area estimation with depth 
 
+Now we'll not only include spatial correlation but a combination of spatial-time correlation. You could also (not shown) model spatial and temporal correlation as separate elements.
+
 We need a new projector matrix (A object) that contains not only the spatial correlation, but also the temporal correlation. This is done by first creating a mesh for the time, where there is an observation for each year. This temporal mesh is named y.mesh and used when creating the spde. We call this object A4 (because it will be used with the 4th model). 
 ```{r, eval=TRUE, echo=TRUE}
-# 2. Define the weighting factors a_ik (also called the projector matrix).
 endyr <- max(cpue_subset$Year)
 y.mesh <- inla.mesh.1d(loc = startyr:endyr)
 
@@ -602,10 +747,9 @@ A4 <- inla.spde.make.A(mesh = mesh1a, loc = Loc,
 dim(A4)
 ```
 
-The first dimension of the projector matrix has the size of the number of observations (here `r dim(A4)[1]`), and the second dimension of the projector matrix is the number of nodes in the mesh (here `r dim(A4)[2]`).
+The first dimension of the projector matrix has the size of the number of observations (here `r dim(A4)[1]`), and the second dimension of the projector matrix is the number of nodes in the mesh (here `r dim(A4)[2]`). Note that we had a spatial mesh with `r dim(A1)[2]` segments, now we multiply that with the number of years in the study. That adds up rather quickly. In the weight matrix we now add these year-steps to the 'n.group' variable. In making the mesh and projector matrix (A4) we already indicated to which group each observation belonged.
 
 ```{r, eval=TRUE, echo=TRUE}
-# 3. Define the spde
 spde  <- inla.spde2.matern(mesh1a)
 
 w.st <- inla.spde.make.index('w', 
@@ -628,7 +772,7 @@ Stack4 <- inla.stack(
        w = w.st))                  #Spatial field
 ```
 
-The model formula also needs to be updated.
+The model formula also needs to be updated to show that the spatial correlation has an extra group to it that is modelled following an autocorrelation ar1 structure. In this way, the spatial correlation is allowed to change over the years (rather than estimating one spatial correlation matrix for the entire time-period).
 ```{r, eval=T, echo=T}
 fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde, group = w.group, control.group = list(model = 'ar1'))", ' f(Depth,model="rw2")'), collapse =" + ")))
 ```
@@ -651,11 +795,13 @@ Z     <- cbind(dic, waic)
 rownames(Z) <- c("Spatial Poisson model",  "Spatial NB model", "Spatial NB model depth","Spatial-temporal NB model depth" )
 Z
 ```
+It is clear we're moving into the right direction.
 
-The depth smoother can be plotted again, now for the Negative Binomial model with spatial-temporal correlation.
+The depth smoother can be plotted again, now for the Negative Binomial model with spatial-temporal correlation. We add the old one in red as well. The differences are very small though.
 ```{r, eval=T, echo=T, dpi=600}
 #plot depth smoother
 Depthm <- I4nb$summary.random$Depth
+DepthmOld <- I3nb$summary.random$Depth
 
 par(mfrow = c(1,1), mar = c(5,5,2,2), cex.lab = 1.5)
 plot(Depthm[,1:2], type='l',
@@ -665,6 +811,9 @@ plot(Depthm[,1:2], type='l',
 abline(h=0, lty=3)
 lines(Depthm[, c(1, 4)], lty=2)
 lines(Depthm[, c(1, 6)], lty=2)
+lines(DepthmOld[, c(1, 2)], lty=1,col=2)
+lines(DepthmOld[, c(1, 4)], lty=2,col=2)
+lines(DepthmOld[, c(1, 6)], lty=2,col=2)
 rug(cpue_subset$Depth)
 ```
 
@@ -688,7 +837,8 @@ p1 <- levelplot(zm ~ x * y|as.factor(year)  ,
           xlab = list("Easting (km)", cex = 1),
           ylab = list("Northing (km)", cex = 1),
           main = list("Posterior mean spatial random fields", cex = 1),
-          col.regions=tim.colors(25, alpha = 1),
+          col.regions=tim.colors(24, alpha = 1),
+          at=seq(-6.5,5,0.5),
            strip = strip.custom(style = 1),
           panel=function(x, y, z, subscripts,...){
             panel.levelplot(x, y, z, subscripts,...)
@@ -708,56 +858,14 @@ rho <-  I4nb$summary.hy[4,c("0.025quant","mean","0.975quant")]
 plot(I4nb$marginals.hyper[[4]],xlab= expression(rho),ylab="Density", type="l")
 abline(v=rho, col=2,lty=c(2,1,2))
 ```
-The posterior mean of the temporal correlation parameter is `rho[2]`.
-
-Below, we plot the characteristics of the spatial (Matern) correlation.
-```{r, eval=T, echo=T}
-
-SpatField.w <- inla.spde2.result(inla = I4nb, name = "w", spde = spde, do.transfer = TRUE)
-
-Kappa <- inla.emarginal(function(x) x, 
-                        SpatField.w$marginals.kappa[[1]])
-
-Sigma_u <- inla.emarginal(function(x) sqrt(x), 
-                        SpatField.w$marginals.variance.nominal[[1]])
-
-range <- inla.emarginal(function(x) x, 
-                        SpatField.w$marginals.range.nominal[[1]])
-
-c(Kappa, Sigma_u, range)   
-```
-
-The range is the distance at which the spatial correlation is approxmately 0.1. Below we plot the correlation as a function of distance, with a horizontal line where the correlation is 0.1.
-
-```{r, eval=T, echo=T, dpi=600}
-# Show correlation structure
-LocMesh <- mesh1a$loc[,1:2]
-
-# And then we calculate the distance between each vertex.
-D <- as.matrix(dist(LocMesh))
-
-# Using the estimated parameters from the model (see above)
-# we can calculate the imposed Matern correlation values.
-d.vec <- seq(0, max(D), length = 100)      
-Cor.M <- (Kappa * d.vec) * besselK(Kappa * d.vec, 1) 
-Cor.M[1] <- 1
-
-# Which we plot here:
-par(mfrow=c(1,1))
-plot(x = d.vec, y = Cor.M, 
-     type = "l", 
-     xlab = "Distance (kilometers)", 
-     ylab = "Correlation", yaxs="i", ylim=c(-0.001,1))
-abline(h = 0.1, lty = 2)
-abline(v = range, lty = 2)
-```
-
+The posterior mean of the temporal correlation parameter is `rho[2]`. So in other words, the spatial correlation in year i is ~95% similar to the spatial correlation in year i+1.
 
 ## Including spatio temporal-correlation in the swept area estimation with depth and having spatial patterns by season
 
-We need a new A object that contains not only the spatial correlation, but also the temporal correlation. This is done by creating a mesh for the time, where there is an observation for each year. This temporal mesh is used when creating the spde. 
+Next step is to include season in the model, especially since we have IBTS Q1 and Q3 data in our dataset (which got lumped for the time being).
+
+We need a new A object that contains not only the spatial correlation, but also the seasonal correlation. This is done by creating a mesh for the time, where there is an observation for each year and one for season (q). This temporal mesh is used when creating the spde. So in the end, we're making two projector matrices, 1) spatial-yearly correlation patterns and 2) spatial-seasonal correlation patterns.
 ```{r, eval=TRUE, echo=TRUE}
-# 2. Define the weighting factors a_ik (also called the projector matrix).
 endyr <- max(cpue_subset$Year)
 y.mesh <- inla.mesh.1d(loc = startyr:endyr)
 q.mesh <- inla.mesh.1d(loc = c(1,3))
@@ -777,7 +885,6 @@ dim(A5b)
 The first dimension of the projector matrix has the size of the number of observations (here `r dim(A1)[1]`), and the second dimension of the projector matrix is the number of nodes in the mesh (here `r dim(A1)[2]`).
 
 ```{r, eval=TRUE, echo=TRUE}
-# 3. Define the spde
 spde  <- inla.spde2.matern(mesh1a)
 
 w.st.y <- inla.spde.make.index('w.y', 
@@ -786,9 +893,7 @@ w.st.y <- inla.spde.make.index('w.y',
 w.st.q <- inla.spde.make.index('w.q', 
                              n.spde = spde$n.spde,
                              n.group = 2)
-
 ```
-
 
 The stack needs to be updated to include the new A5a and A5b objects that now include spatio temporal (annual) correlation and the  seasonal correlation.
 ```{r, eval=T, echo=T}
@@ -805,12 +910,12 @@ Stack5 <- inla.stack(
        w.q = w.st.q))                  #Spatial field
 ```
 
-The model formula also needs to be updated. Because there are only two seasons, the correlation is 'exchangeable'.
+The model formula also needs to be updated. Because there are only two seasons, the correlation is 'exchangeable', i.e. they are correlated (works only for two groups) and you estimate one parameter for it.
 ```{r, eval=T, echo=T}
 fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w.y, model = spde, group = w.y.group, control.group = list(model = 'ar1'))"," f(w.q, model = spde, group = w.q.group, control.group = list(model = 'exchangeable'))",' f(Depth,model="rw2")'), collapse =" + ")))
 ```
 
-The new model is called I4nb.
+The new model is called I5nb.
 ```{r, eval=T, echo=T}
 INLA:::inla.dynload.workaround() 
 I5nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack5),
@@ -828,22 +933,7 @@ Z     <- cbind(dic, waic)
 rownames(Z) <- c("Spatial Poisson model",  "Spatial NB model", "Spatial NB model depth","Spatial-temporal NB model depth", "Spatial-temporal NB model depth with seasonal effect" )
 Z
 ```
-
-Depth smoother can be plotted again, now for the Negative Binomial model with spatial-temporal correlation.
-```{r, eval=T, echo=T, dpi=600}
-#plot depth smoother
-Depthm <- I5nb$summary.random$Depth
-
-par(mfrow = c(1,1), mar = c(5,5,2,2), cex.lab = 1.5)
-plot(Depthm[,1:2], type='l',
-     xlab = 'Depth (m)', 
-     ylab = 'Smoother',
-     ylim = c(-2, 2) )
-abline(h=0, lty=3)
-lines(Depthm[, c(1, 4)], lty=2)
-lines(Depthm[, c(1, 6)], lty=2)
-rug(cpue_subset$Depth)
-```
+That doesn't always go as intended, and I end up with a poorly fitted model. Overfitting?
 
 Now we plot the spatial correlation. Because we now have a spatial-temporal model we need to plot one panel per year. The panels are quite small, so we chose not to plot the observations.
 ```{r, eval=T, echo=T, fig.width=8, fig.height=8, dpi=600}
@@ -865,7 +955,8 @@ p1 <- levelplot(zm ~ x * y|as.factor(year)  ,
           xlab = list("Easting (km)", cex = 1),
           ylab = list("Northing (km)", cex = 1),
           main = list("Posterior mean spatial random fields", cex = 1),
-          col.regions=tim.colors(25, alpha = 1),
+          col.regions=tim.colors(24, alpha = 1),
+          at=seq(-6.5,5,0.5),
            strip = strip.custom(style = 1),
           panel=function(x, y, z, subscripts,...){
             panel.levelplot(x, y, z, subscripts,...)
@@ -938,7 +1029,7 @@ range <- inla.emarginal(function(x) x,
 c(Kappa, Sigma_u, range)   
 ```
 
-The range is the distance at which the spatial correlation is approxmately 0.1. Below we plot the correlation as a function of distance, with a horizontal line where the correlation is 0.1.
+The range is the distance at which the spatial correlation is approxmately 0.1. Below we plot the correlation as a function of distance, with a horizontal line where the correlation is 0.1. We see that this value is going down with adding more terms to the model. 
 
 ```{r, eval=T, echo=T, dpi=600}
 # Show correlation structure
@@ -966,9 +1057,9 @@ abline(v = range, lty = 2)
 
 ## Using offset for area  
 
-Note that in code below the names in the model matrix should not contain any special characters! This is why we renamed the "NS-IBTS" survey to "NSIBTS" earlier.
+Instead of using lsurface as a co-variate, we can also use the area as an offset. In that way, with twice the surface we expect twice the number of counts.
 
-The model formula needs to be updated so that lsurface doe snot end up in fixed effects. 
+The model formula needs to be updated so that lsurface does not end up in fixed effects. 
 ```{r, eval=T, echo=T}
 fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)[!names(X)=="lsurface"],"offset(lsurface)"," f(w, model = spde, group = w.group, control.group = list(model = 'ar1'))", ' f(Depth,model="rw2")'), collapse =" + ")))
 ```
@@ -991,113 +1082,10 @@ rownames(Z) <- c("Spatial Poisson model (2p)",  "Spatial NB model (2 NB)", "Spat
 Z
 ```
 
-The depth smoother can be plotted again, now for the negative binomial model with spatial-temporal correlation, where the log transformed surface is an offset rather than a model parameter.
-```{r, eval=T, echo=T}
-#plot depth smoother
-Depthm <- I6nb$summary.random$Depth
-
-par(mfrow = c(1,1), mar = c(5,5,2,2), cex.lab = 1.5)
-plot(Depthm[,1:2], type='l',
-     xlab = 'Depth (m)', 
-     ylab = 'Smoother',
-     ylim = c(-2, 2) )
-abline(h=0, lty=3)
-lines(Depthm[, c(1, 4)], lty=2)
-lines(Depthm[, c(1, 6)], lty=2)
-rug(cpue_subset$Depth)
-```
-Now we plot the spatial correlation. Because we now have a spatial-temporal model we need to plot one panel per year. The panels are quite small, so we chose not to plot the observations
-```{r, eval=T, echo=T, fig.width=8, fig.height=8, dpi=600}
-years <- startyr:endyr
-
-w.pm <- I6nb$summary.random$w$mean
-wproj <- inla.mesh.projector(mesh1a, dims=c(xres,yres), xlim = xl, ylim = yl) 
-
-grid <- expand.grid(year=years, x = wproj$x, y = wproj$y,zm=NA)
-
-for (i in unique(w.st$w.group)){
-    w.pm1km2 <- inla.mesh.project(wproj,w.pm[w.st$w.group==i])
-    grid[grid$year==years[i],]$zm <- as.vector(w.pm1km2)  
-}
-
-p1 <- levelplot(zm ~ x * y|as.factor(year)  ,
-          data = grid, 
-          scales = list(draw = TRUE),
-          xlab = list("Easting (km)", cex = 1),
-          ylab = list("Northing (km)", cex = 1),
-          main = list("Posterior mean spatial random fields", cex = 1),
-          col.regions=tim.colors(25, alpha = 1),
-           strip = strip.custom(style = 1),
-          panel=function(x, y, z, subscripts,...){
-            panel.levelplot(x, y, z, subscripts,...)
-            grid.points(x = cpue_subset[cpue_subset$Year == grid[subscripts[1],]$year,]$Xkm,
-                        y = cpue_subset[cpue_subset$Year == grid[subscripts[1],]$year,]$Ykm, 
-                        pch = 1,
-                        size = unit(0.0005*cpue_subset[cpue_subset$Year ==grid[subscripts[1],]$year,]$NoPerHaul/
-                                    cpue_subset[cpue_subset$Year ==grid[subscripts[1],]$year,]$surface, "char"))  
-          }) +  xyplot(ym~ xm, UTMmapFinal, type='l', lty=1, lwd=0.5, col='black')
-
-plot(p1)
-```
-
-Next we plot the posterior of the estimated temporal correlation. The drawn red vertical line indicates the mean of the distribution. The dashed line indicate the 0.025 and 0.975 quantiles.
-```{r, eval=T, echo=T, dpi=600}
-rho <-  I6nb$summary.hy[4,c("0.025quant","mean","0.975quant")]
-plot(I6nb$marginals.hyper[[4]],xlab= expression(rho),ylab="Density", type="l")
-abline(v=rho, col=2,lty=c(2,1,2))
-```
-Plot the characteristics of the spatial (Matern) correlation.
-```{r, eval=T, echo=T}
-
-SpatField.w <- inla.spde2.result(inla = I6nb, name = "w", spde = spde, do.transfer = TRUE)
-
-Kappa <- inla.emarginal(function(x) x, 
-                        SpatField.w$marginals.kappa[[1]])
-
-Sigma_u <- inla.emarginal(function(x) sqrt(x), 
-                        SpatField.w$marginals.variance.nominal[[1]])
-
-range <- inla.emarginal(function(x) x, 
-                        SpatField.w$marginals.range.nominal[[1]])
-
-c(Kappa, Sigma_u, range)   
-```
-
-The range is the distance at which the spatial correlation is approxmately 0.1. Below we plot the correlation as a function of distance, with a horizontal line where the correlation is 0.1.
-
-```{r, eval=T, echo=T, dpi=600}
-# Show correlation structure
-LocMesh <- mesh1a$loc[,1:2]
-
-# And then we calculate the distance between each vertex.
-D <- as.matrix(dist(LocMesh))
-
-# Using the estimated parameters from the model (see above)
-# we can calculate the imposed Matern correlation values.
-d.vec <- seq(0, max(D), length = 100)      
-Cor.M <- (Kappa * d.vec) * besselK(Kappa * d.vec, 1) 
-Cor.M[1] <- 1
-
-# Which we plot here:
-par(mfrow=c(1,1))
-plot(x = d.vec, y = Cor.M, 
-     type = "l", 
-     xlab = "Distance (kilometers)", 
-     ylab = "Correlation", yaxs="i", ylim=c(-0.001,1))
-abline(h = 0.1, lty = 2)
-abline(v = range, lty = 2)
-```
-
-Save the INLA results in an .Rdata image file.
-
-```{r, eval=T, echo=T, dpi=600}
-save.image(file.path(path,"INLA_results.Rdata"))
-```
-
 
 ## Using offset for area with seasonally changing spatial corr 
-Note that in code below the names in the model matrix should not contain any special characters! This is why we renamed the "NS-IBTS" survey to "NSIBTS" earlier.
 
+We can make the model more complex again now with seasonal spatial correlation.
 ```{r, eval=T, echo=T}
 fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)[!names(X)=="lsurface"],"offset(lsurface)",
                         " f(w.y, model = spde, group = w.y.group, control.group = list(model = 'ar1'))",
@@ -1105,7 +1093,7 @@ fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)[!names(X)=="lsurfac
                         ' f(Depth,model="rw2")'), collapse =" + ")))
 ```
 
-The new model is called I4nb.
+The new model is called I7nb and we can re-use Stack5.
 ```{r, eval=T, echo=T}
 INLA:::inla.dynload.workaround() 
 I7nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack5),
@@ -1113,39 +1101,6 @@ I7nb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack5),
            control.predictor = list(A = inla.stack.A(Stack5)))
 
 summary(I7nb)
-```
-
-## Encore2: test if relative survey catchabilities are changing? 
-
-The stack needs to be updated to include year.
-```{r, eval=F, echo=T}
-N <- nrow(cpue_subset)
-Stack1 <- inla.stack(
-    tag  = "Fit",
-    data = list(y = cpue_subset$NoPerHaul),    
-    A    = list(1,1,1,1, A1),                      
-    effects = list( 
-       Intercept=rep(1,N),
-       X=X, #Covariates
-       Depth = cpue_subset$Depth,
-       Year = cpue_subset$Year,
-       w = w.st))                  #Spatial field
-```
-
-The model formula also needs to be updated.
-```{r, eval=F, echo=T}
-#6.	Specify the model formula
-fsp <- parse(text=c("y ~ -1 + Intercept + ",paste(c(names(X)," f(w, model = spde, group = w.group, control.group = list(model = 'ar1'))", ' f(Depth,model="rw2")', ' f(Year,group=fSurvey,model="rw2")'), collapse =" + ")))
-```
-
-The new model is called I5nb.
-```{r, eval=F, echo=T}
-INLA:::inla.dynload.workaround() 
-Ixxxnb <- inla(eval(fsp), family = "nbinomial", data=inla.stack.data(Stack1),
-           control.compute = list(dic = TRUE, waic = TRUE, config=TRUE, openmp.strategy="large"),
-           control.predictor = list(A = inla.stack.A(Stack1)))
-
-summary(I5nb)
 ```
 
 ## References
