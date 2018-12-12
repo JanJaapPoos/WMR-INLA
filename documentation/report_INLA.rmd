@@ -15,17 +15,16 @@ INLA stands for "Integrated Nested Laplace Approximations". INLA is a tool for B
 
 Before we get started we need to set the correct path to access the data, load the relevant libraries, and read the data. In this case, the data is stored in an .Rdata file from a previous step (report_survey_prep).
 
-The INLA package can be installed using install.packages("INLA", repos="https://inla.r-inla-download.org/R/stable"). We need the inla package, but also a number of packages for spatial analyses ('rgeos' and 'rgdal')  and for plotting the data and the results ('lattice', 'latticeExtra', 'grid', 'gridExtra', 'mapdata', and 'maptools').
+The INLA package can be installed using install.packages("INLA", repos="https://inla.r-inla-download.org/R/stable"). We need the inla package, but also a number of packages for spatial analyses ('rgdal', 'rgeos', 'mgcv'),  or plotting the data and results ('lattice', 'latticeExtra', 'grid', 'gridExtra', 'mapdata', 'maptools', 'fields', 'ZIM').
 
 ```{r, eval=T, results="hide", echo=TRUE, message=FALSE, warning=FALSE}
 path <- "~/WMR-INLA/data"
 #path <- "d://WMR-INLA/data" 
 
-library(INLA); library(fields); 
-library(mgcv)
+library(INLA); 
+library(rgdal); library(rgeos); library(mgcv)
 library(lattice); library(latticeExtra); library(grid); library(gridExtra);
-library(rgdal); library(rgeos); 
-library(mapdata); library(maptools)
+library(mapdata); library(maptools); library(fields); library(ZIM)
 
 load(file.path(path,"survey_data.Rdata"))
 ```
@@ -41,7 +40,7 @@ head(full_cpue)
 
 We still have a lot of data (`r nrow(full_cpue)`). Because these are just here as example, we will subset the data, and start our analysis from a fiven year. That year is stored in startyr.    
 ```{r, eval=TRUE, echo=TRUE}
-startyr <- 2014
+startyr <- 1980
 cpue_subset <- full_cpue[full_cpue$Year >= startyr,]
 ```
 
@@ -259,11 +258,14 @@ rownames(Z) <- c("Poisson model", "Negative binomial model", "Zero Inflated Pois
 Z
 ```
 
-The negative binomial model has the lowest DIC and WAIC. Let's see the summary of this model. The difference with the Zero-inflated negative binomial is however small. Let's compare estimated parameters too.  
+The negative binomial model has the lowest DIC and WAIC. Let's see the summary of this model.  
 ```{r, eval=T, echo=T}
 summary(I1nb)
-summary(I1zinb)
+```
+The summary displays the call to INLA, some information about the time needed to process the model, information about the fixed effects, random effects, model hyperparameters, and several information criteria. The fixed effects include the intercept and all parameter valuse for the factor variable years. The number of parameter estimates for years is equal the the total number of years in the model minus 1. Likewise, there are two surveys in the data, and the number of parameter estimates in the model is two minus one: only the parameter estimate for the difference between the IBTS and BTS is given. The parameter estimate named "lhauldur" gives the linear predictor for the effect of log haul duration.
 
+The difference with the Zero-inflated negative binomial is however small. Let's compare estimated parameters
+```{r, eval=T, echo=T}
 par(mfrow=c(1,1),oma=c(6,4,2,2))
 plot(y=I1nb$summary.fixed[,4],x=1:nrow(I1nb$summary.fixed),pch=19,xlab="",ylab="Parameter value",col=1,ylim=range(I1nb$summary.fixed[,3:5]),xaxt="n")
 axis(1,at=1:nrow(I1nb$summary.fixed),labels=rownames(I1nb$summary.fixed),las=2)
@@ -276,7 +278,7 @@ segments(x0=(1:nrow(I1zinb$summary.fixed))+0.1,x1=(1:nrow(I1zinb$summary.fixed))
 legend("bottomright",legend=c("I1nb","I1zinb"),pch=19,col=1:2)
 
 ```
-The summary displays the call to INLA, some information about the time needed to process the model, information about the fixed effects, random effects, model hyperparameters, and several information criteria. The fixed effects include the intercept and all parameter valuse for the factor variable years. The number of parameter estimates for years is equal the the total number of years in the model minus 1. Likewise, there are two surveys in the data, and the number of parameter estimates in the model is two minus one: only the parameter estimate for the difference between the IBTS and BTS is given. The parameter estimate named "lhauldur" gives the linear predictor for the effect of log haul duration.
+
 
 The difference in estimated fixed effects is very small.
 
@@ -343,7 +345,6 @@ M4_theta <- M4$summary.hyperpar[1,"mean"]
 M4_ExpY <- (1-M4_Pi) * M4_mu
 M4_VarY <- (1-M4_Pi) * (M4_mu + M4_Pi * M4_mu^2)
 M4_E <- (cpue_subset$NoPerHaul - M4_ExpY) / sqrt(M4_ExpY + M4_ExpY^2/ M4_theta)
-
 ```
 
 Let's check for overdispersion:
@@ -364,14 +365,12 @@ abline(a=0,b=1,col=2,lty=2)
 
 plot(y=M4_ExpY,x=cpue_subset$NoPerHaul,pch=".",ylim=c(0,10),xlim=c(0,30),xlab="Observed",ylab="Predicted",main="Zero-inflated Negative Binomial")
 abline(a=0,b=1,col=2,lty=2)
-
 ```
 The differences are small...
 
 With the count data, the counts vary between `r range(cpue_subset$NoPerHaul)` while in the fitted models, predicted values go from Poisson `r range(M1_ExpY)`, NegBin `r range(M2_ExpY)`, ZIP `r range(M3_ExpY)` and ZINB `r range(M4_ExpY)`. That is quite a bit lower! These high counts are always difficult to predict using mean values, and therefore we test if given the estimated parameters, we can predict those high numbers too. For this, we make a prediction given the estimated parameters and see how many times we predict a certain amount of NoPerHaul compared to the observed ones. We put this onto an x-y plot to see if we under-over estimate lower-higher frequency counts. The point in the top-right represents zero-counts and the next one 1-counts etc. 
 
 ```{r, eval=T, echo=T,  dpi=600} 
-library(ZIM)
 par(mfrow=c(4,2))
 for(fam in c("poisson","nbinomial","zeroinflatedpoisson1","zeroinflatednbinomial1")){
   if(fam=="poisson"){
@@ -425,7 +424,6 @@ xyplot(ShootLat ~ ShootLong | fYear * fSurvey, data=cpue_subset,type="p",pch=1,c
     idx <- sample(x,length(x))
     panel.points(x,y,col=col,cex=cex,pch=19)
     })
-
 ```
 The residuals don't look very good, only a few large positive residuals vs many small negative ones. But what to do?!
 
@@ -795,7 +793,11 @@ Z     <- cbind(dic, waic)
 rownames(Z) <- c("Spatial Poisson model",  "Spatial NB model", "Spatial NB model depth","Spatial-temporal NB model depth" )
 Z
 ```
-It is clear we're moving into the right direction.
+It is clear we're moving into the right direction. Let's save the results that we have so far so that we can use them later.
+```{r, eval=T, echo=T}
+save.image("INLA_results.Rdata")
+```
+
 
 The depth smoother can be plotted again, now for the Negative Binomial model with spatial-temporal correlation. We add the old one in red as well. The differences are very small though.
 ```{r, eval=T, echo=T, dpi=600}
