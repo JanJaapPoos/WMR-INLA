@@ -122,11 +122,11 @@ Now that we have the two possible boundaries to use for the mesh, we can generat
 The mesh can be extended outside the boundary by setting two values for the "max.edge" argument (see also ?inla.mesh.2d). Bakka et al. (2016). gives background on the creation of meshes, and if the mesh should be extended outside the boundary of the observations: "Solutions of SPDEs (that are used in INLA) on bounded domains are constructed imposing boundary conditions. In particular for 2D problems the R-INLA implementation uses Neumann boundaries. This class of conditions increase the variance near the boundaries. Then, if we are modelling a stationary field it is important to extend the domain in order to make this effect neglegible. On the other hand, if there is a physical boundary this effect may be desiderable." In our case, the boundary of the observations corresponds roughly with the coastlines, and we thus chose not to extend the mesh outside of the observations. In other applications, where the boundary of the observations does not correspond to a "natural boundary" extending the mesh is probably advisable. 
 
 ```{r, eval=T, echo=TRUE}
-mesh1a <- inla.mesh.2d(boundary=ConvHull, max.edge=c(60))
-mesh1b <- inla.mesh.2d(boundary=NS.border, max.edge=c(60), cutoff=3)
+mesh1a <- inla.mesh.2d(boundary=ConvHull, max.edge=c(80))
+mesh1b <- inla.mesh.2d(boundary=NS.border, max.edge=c(80), cutoff=3)
 ```
 
-The number of vertices is stored in mesh1a$n and mesh1b$n. In our example, the number of verices for mesh1a is `r mesh1a$n`. A mesh with ~ 1000 vertices seems like a good trade-off between computation time and precision of our estimates. Note that when we use the NS.border as a boundary, we need a very high amount of extra meshes to cover the odd shape of the coastline. Only if you are interested in these fine-scale patterns close to shore, it becomes worth it to take this approach. The number of vertices is ~5x higher, which may result in a much longer computation time.
+The number of vertices is stored in mesh1a$n and mesh1b$n. In our example, the number of verices for mesh1a is `r mesh1a$n`. A mesh with ~ 1000 vertices seems like a good trade-off between computation time and precision of our estimates. Note that when we use the NS.border as a boundary, we need a very high amount of extra meshes to cover the odd shape of the coastline. Only if you are interested in these fine-scale patterns close to shore, it becomes worth it to take this approach. The number of vertices is ~5x higher, resulting in a much longer computation time.
 
 The meshes can be plotted using the plot() function on the mesh object. Once the mesh is plotted, the locations of the samples (stored in the Loc object) can be overlayed using points(). Below, the two meshes are plotted side-by-side, together with a map in UTM coordinates.
 
